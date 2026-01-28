@@ -9,13 +9,37 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.3",
+    "@mapbox/polyline": "^1.2.1",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/native": "^7.1.27",
+    "@react-navigation/stack": "^7.6.14",
+    "@stomp/stompjs": "^7.2.1",
+    "axios": "^1.13.2",
     "expo": "~54.0.31",
+    "expo-av": "~16.0.8",
+    "expo-clipboard": "~8.0.8",
+    "expo-constants": "~18.0.13",
+    "expo-device": "~8.0.10",
+    "expo-location": "~19.0.8",
+    "expo-notifications": "^0.32.16",
+    "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "lucide-react-native": "^0.562.0",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-maps": "1.20.1",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "sockjs-client": "^1.6.1",
+    "text-encoding": "^0.7.0"
   },
   "devDependencies": {
+    "@types/mapbox__polyline": "^1.0.5",
     "@types/react": "~19.1.0",
+    "@types/sockjs-client": "^1.5.4",
+    "@types/text-encoding": "^0.0.40",
     "typescript": "~5.9.2"
   },
   "private": true
