@@ -48,7 +48,7 @@ export interface Commande {
 }
 
 export interface CommandeProduit {
-    id?: number;
-    produitId: number;
-    quantite: number;
-  }
+  id?: number;
+  produitId: number;
+  quantite: number;
+}

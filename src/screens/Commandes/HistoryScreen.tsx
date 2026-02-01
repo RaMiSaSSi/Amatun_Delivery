@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LivreurService } from '../../services/LivreurService';
 import { DemandeLivraisonService } from '../../services/DemandeLivraisonService';
-import { Commande, Statut } from '../../Types/types';
+import { Commande, Statut, Type } from '../../Types/types';
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
+import { calculateDriverRevenue } from '../../utils/revenueCalculator';
+import { translateStatut, translateStatutDemande } from '../../utils/translations';
 
 import { useAuth } from '../../context/AuthContext';
 
@@ -17,6 +19,8 @@ type HistoryItem = {
     clientNom: string;
     adresse: string;
     prix?: number;
+    boutiqueCount?: number;
+    driverRevenue?: number;
     original: Commande | DemandeLivraison;
 };
 
@@ -26,11 +30,29 @@ export default function HistoryScreen() {
     const [items, setItems] = useState<HistoryItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [range, setRange] = useState<'TODAY' | 'WEEK' | 'ALL'>('TODAY');
+    const [stats, setStats] = useState({
+        expressCmds: 0,
+        standardCmds: 0,
+        expressDmds: 0,
+        standardDmds: 0,
+        totalRevenue: 0
+    });
 
     const fetchHistory = async () => {
         if (!userId) return;
         setLoading(true);
         try {
+            // Fetch stats
+            const [expCmds, stdCmds, expDmds, stdDmds, livreurInfo] = await Promise.all([
+                LivreurService.countCommandesByType(userId, Type.EXPRESS),
+                LivreurService.countCommandesByType(userId, Type.STANDARD),
+                DemandeLivraisonService.countDemandesByType(Type.EXPRESS),
+                DemandeLivraisonService.countDemandesByType(Type.STANDARD),
+                LivreurService.getLivreurInfos(userId)
+            ]);
+
+            const transportMode = livreurInfo?.moyen || 'MOTO';
+
             let startDate: string | undefined;
             let endDate: string | undefined;
 
@@ -52,8 +74,41 @@ export default function HistoryScreen() {
             // Fetch Demandes
             const dmdData: DemandeLivraison[] = await DemandeLivraisonService.getMesLivraisons(userId);
 
+            // Fetch Boutique counts for each command and calculate revenue
+            let currentRevenue = 0;
+            const enrichedCmds = await Promise.all((cmdData || []).map(async (c) => {
+                const boutiqueCount = await LivreurService.countBoutiquesInCommande(c.id);
+                let distRevenue = 0;
+
+                // Calculate Driver Revenue if Delivered OR Returned
+                // Note: We calculate it even if not delivered to show potential? 
+                // Usually revenue is only counted if delivered.
+                if (c.statut === Statut.DELIVERED || c.statut === Statut.RETURNED) {
+                    distRevenue = await calculateDriverRevenue(c, transportMode);
+                    currentRevenue += distRevenue;
+                } else if (c.statut === Statut.ACCEPTED || c.statut === Statut.SHIPPED) {
+                    // Start calculating potential revenue anyway to show it? 
+                    // Let's just calculate it for all to display it
+                    distRevenue = await calculateDriverRevenue(c, transportMode);
+                }
+
+                return { ...c, boutiqueCount, driverRevenue: distRevenue };
+            }));
+
+            // Handle Demande Revenue (if any logic exists, currently 0 or undefined)
+            // Assuming Demandes don't track distance-based revenue effectively yet 
+            // or use a different logic. Leaving as 0 for now as per scope.
+
+            setStats({
+                expressCmds: expCmds,
+                standardCmds: stdCmds,
+                expressDmds: expDmds,
+                standardDmds: stdDmds,
+                totalRevenue: currentRevenue
+            });
+
             // Normalize and Combine
-            const normalizedCmds: HistoryItem[] = (cmdData || []).map(c => ({
+            const normalizedCmds: HistoryItem[] = enrichedCmds.map(c => ({
                 id: c.id,
                 type: 'COMMANDE',
                 date: c.date,
@@ -61,6 +116,8 @@ export default function HistoryScreen() {
                 clientNom: `${c.nom} ${c.prenom}`,
                 adresse: `${c.adresse?.rue}, ${c.adresse?.delegation}`,
                 prix: c.prixTotalAvecLivraison,
+                boutiqueCount: c.boutiqueCount,
+                driverRevenue: c.driverRevenue,
                 original: c
             }));
 
@@ -81,7 +138,7 @@ export default function HistoryScreen() {
                     statut: d.statut,
                     clientNom: `${d.nomDestinataire} ${d.prenomDestinataire}`,
                     adresse: `${d.adresseCourteDestinataire}, ${d.villeDestinataire}`,
-                    prix: 0, // Les demandes spéciales peuvent avoir un prix différent ou géré ailleurs
+                    prix: 0,
                     original: d
                 }));
 
@@ -113,6 +170,10 @@ export default function HistoryScreen() {
         else if (isReturned) { badgeStyle = styles.badgeRed; textStyle = { color: '#991b1b' } }
         else if (isShipped) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
 
+        const statusText = item.type === 'COMMANDE'
+            ? translateStatut(item.statut)
+            : translateStatutDemande(item.statut);
+
         return (
             <TouchableOpacity
                 style={styles.card}
@@ -127,7 +188,11 @@ export default function HistoryScreen() {
                 <View style={styles.cardHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <View style={[styles.iconContainer, { backgroundColor: item.type === 'COMMANDE' ? '#d1fae5' : '#dbeafe' }]}>
-                            <Image source={require('../../../assets/Delivery.png')} style={styles.historyIconImg} />
+                            <Ionicons
+                                name={item.type === 'COMMANDE' ? "cube-outline" : "bicycle-outline"}
+                                size={18}
+                                color={item.type === 'COMMANDE' ? "#059669" : "#2563eb"}
+                            />
                         </View>
                         <View>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -137,16 +202,31 @@ export default function HistoryScreen() {
                         </View>
                     </View>
                     <View style={[styles.badge, badgeStyle]}>
-                        <Text style={[styles.badgeText, textStyle]}>{item.statut}</Text>
+                        <Text style={[styles.badgeText, textStyle]}>{statusText.toUpperCase()}</Text>
                     </View>
                 </View>
 
                 <View style={styles.cardBody}>
                     <Text style={styles.clientName}>{item.clientNom}</Text>
                     <Text style={styles.address} numberOfLines={1}>{item.adresse}</Text>
+                    {item.type === 'COMMANDE' && item.boutiqueCount !== undefined && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                            <Ionicons name="storefront-outline" size={14} color="#64748b" />
+                            <Text style={{ fontSize: 12, color: '#64748b' }}>
+                                {item.boutiqueCount} {item.boutiqueCount > 1 ? 'boutiques' : 'boutique'}
+                            </Text>
+                        </View>
+                    )}
                     <View style={styles.priceRow}>
                         <Text style={styles.price}>{item.prix && item.prix > 0 ? `${item.prix} TND` : '---'}</Text>
-                        <Text style={styles.typeLabel}>{item.type === 'COMMANDE' ? 'E-commerce' : 'Livraison Directe'}</Text>
+
+                        {/* Driver Revenue Display */}
+                        {item.type === 'COMMANDE' && item.driverRevenue !== undefined && (
+                            <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#f59e0b' }}>
+                                Gain: {item.driverRevenue.toFixed(2)} TND
+                            </Text>
+                        )}
+
                     </View>
                 </View>
             </TouchableOpacity>
@@ -168,7 +248,7 @@ export default function HistoryScreen() {
                 </View>
             </View>
 
-            {/* Premium Filter Segment */}
+            {/* Filters */}
             <View style={styles.filterWrapper}>
                 <View style={styles.segmentControl}>
                     <TouchableOpacity
@@ -189,6 +269,28 @@ export default function HistoryScreen() {
                     >
                         <Text style={[styles.segmentText, range === 'ALL' && styles.segmentTextActive]}>Toutes</Text>
                     </TouchableOpacity>
+                </View>
+            </View>
+
+            {/* Analytics Summary */}
+            <View style={styles.statsContainer}>
+                <View style={[styles.statItem, { backgroundColor: '#eff6ff' }]}>
+                    <Text style={styles.statLabel}>Revenue</Text>
+                    <Text style={[styles.statValue, { color: '#2563eb' }]}>{stats.totalRevenue.toFixed(2)} TND</Text>
+                </View>
+                <View style={[styles.statItem, { backgroundColor: '#f0fdf4' }]}>
+                    <Text style={styles.statLabel}>Commandes</Text>
+                    <View style={styles.subStatsRow}>
+                        <Text style={styles.subStatText}>Exp: {stats.expressCmds}</Text>
+                        <Text style={styles.subStatText}>Std: {stats.standardCmds}</Text>
+                    </View>
+                </View>
+                <View style={[styles.statItem, { backgroundColor: '#fff7ed' }]}>
+                    <Text style={styles.statLabel}>Demandes</Text>
+                    <View style={styles.subStatsRow}>
+                        <Text style={styles.subStatText}>Exp: {stats.expressDmds}</Text>
+                        <Text style={styles.subStatText}>Std: {stats.standardDmds}</Text>
+                    </View>
                 </View>
             </View>
 
@@ -241,7 +343,7 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
     headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500' },
 
-    filterWrapper: { padding: 20 },
+    filterWrapper: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
     segmentControl: {
         flexDirection: 'row',
         backgroundColor: '#f1f5f9',
@@ -264,6 +366,40 @@ const styles = StyleSheet.create({
     },
     segmentText: { fontSize: 13, fontWeight: 'bold', color: '#64748b' },
     segmentTextActive: { color: '#1e293b' },
+
+    statsContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        gap: 10,
+        marginBottom: 10
+    },
+    statItem: {
+        flex: 1,
+        padding: 12,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    statLabel: {
+        fontSize: 10,
+        color: '#64748b',
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+        marginBottom: 4
+    },
+    statValue: {
+        fontSize: 14,
+        fontWeight: 'bold'
+    },
+    subStatsRow: {
+        flexDirection: 'column',
+        alignItems: 'center'
+    },
+    subStatText: {
+        fontSize: 9,
+        color: '#475569',
+        fontWeight: '600'
+    },
 
     listContent: { paddingHorizontal: 20, paddingBottom: 40 },
 

@@ -3,12 +3,13 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActivityIndi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av'; // Pour le son
+import { useAudioPlayer } from 'expo-audio'; // Pour le son
 
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
 import { DemandeLivraisonService, DemandeWebSocketService } from '../../services/DemandeLivraisonService';
 import { useAuth } from '../../context/AuthContext';
 import { translateStatutDemande } from '../../utils/translations';
+import { NotificationService } from '../../services/NotificationService';
 
 const DemandesListScreen = () => {
   const navigation = useNavigation<any>();
@@ -26,13 +27,12 @@ const DemandesListScreen = () => {
 
   const wsService = useRef<DemandeWebSocketService | null>(null);
 
+  const player = useAudioPlayer(require('../../../assets/Notification.mp3'));
+
   // Pour le son de notification
   const playNotificationSound = async () => {
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/Notification.mp3')
-      );
-      await sound.playAsync();
+      player.play();
     } catch (error) {
       console.log('Erreur son notification', error);
     }
@@ -89,6 +89,10 @@ const DemandesListScreen = () => {
 
         // Nouvelle demande : ALERTE et SON
         playNotificationSound();
+        NotificationService.presentLocalNotification(
+          "🚲 Nouvelle Demande",
+          `Une livraison vers ${demande.villeDestinataire} est disponible.`
+        );
         Alert.alert(
           "🚲 Nouvelle Demande",
           `Une nouvelle livraison spéciale vers ${demande.villeDestinataire} est disponible !`,
@@ -200,7 +204,7 @@ const DemandesListScreen = () => {
     <TouchableOpacity style={styles.card} onPress={() => handlePressDemande(item)} activeOpacity={0.9}>
       <View style={styles.cardHeader}>
         <View style={styles.iconBox}>
-          <Image source={require('../../../assets/Delivery.png')} style={styles.demandeIconImg} />
+          <Ionicons name="bicycle-outline" size={20} color="#3b82f6" />
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.routeText}>{item.ville} <Ionicons name="arrow-forward" /> {item.villeDestinataire}</Text>

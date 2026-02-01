@@ -5,7 +5,8 @@ import { TextEncoder, TextDecoder } from 'text-encoding';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-const WS_URL = 'ws://192.168.1.50:8085/ws/websocket';
+// Utilisation du tunnel Dev pour les WebSockets (wss:// au lieu de ws://)
+const WS_URL = 'wss://lpvq76hs-8085.uks1.devtunnels.ms/ws/websocket';
 
 export class WebSocketService {
   private client: Client;

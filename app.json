@@ -1,33 +1,44 @@
 {
-    "expo": {
-        "name": "LivreurApp",
-        "slug": "LivreurApp",
-        "version": "1.0.0",
-        "orientation": "portrait",
-        "icon": "./assets/Delivery.png",
-        "userInterfaceStyle": "light",
-        "newArchEnabled": true,
-        "splash": {
-            "image": "./assets/Delivery.png",
-            "resizeMode": "contain",
-            "backgroundColor": "#ffffff"
-        },
-        "ios": {
-            "supportsTablet": true
-        },
-        "android": {
-            "adaptiveIcon": {
-                "foregroundImage": "./assets/Delivery.png",
-                "backgroundColor": "#ffffff"
-            },
-            "edgeToEdgeEnabled": true,
-            "predictiveBackGestureEnabled": false
-        },
-        "web": {
-            "favicon": "./assets/favicon.png"
-        },
-        "plugins": [
-            "expo-secure-store"
-        ]
+  "expo": {
+    "name": "LivreurApp",
+    "slug": "LivreurApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/Delivery.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/Delivery.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/Delivery.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "AmatunDelivery.Amatun"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-audio"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "98ad70d2-469f-4e6a-965a-7a5c70edc4b9"
+      }
     }
+  }
 }

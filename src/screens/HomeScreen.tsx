@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, Image } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import { useAudioPlayer } from 'expo-audio';
 
 import { useAuth } from '../context/AuthContext';
 import { LivreurService } from '../services/LivreurService';
@@ -12,6 +12,7 @@ import { WebSocketService } from '../services/websocket';
 import { Statut, Commande } from '../Types/types';
 import { StatutDemande } from '../Types/DemandeLivraison';
 import { AppState, AppStateStatus } from 'react-native';
+import { NotificationService } from '../services/NotificationService';
 
 export default function HomeScreen() {
     const navigation = useNavigation<any>();
@@ -20,13 +21,12 @@ export default function HomeScreen() {
     const [demandesCount, setDemandesCount] = useState(0);
     const [confirmedLast3Days, setConfirmedLast3Days] = useState(0);
 
+    const player = useAudioPlayer(require('../../assets/Notification.mp3'));
+
     // Pour le son
     const playNotificationSound = async () => {
         try {
-            const { sound } = await Audio.Sound.createAsync(
-                require('../../assets/Notification.mp3')
-            );
-            await sound.playAsync();
+            player.play();
         } catch (error) {
             console.log('Erreur son notification', error);
         }
@@ -100,6 +100,10 @@ export default function HomeScreen() {
                 fetchData();
                 if (msg.type === 'NEW_ORDER') {
                     playNotificationSound();
+                    NotificationService.presentLocalNotification(
+                        "📦 Nouvelle Commande !",
+                        "Une nouvelle commande est disponible dans votre secteur."
+                    );
                     Alert.alert(
                         "📦 Nouvelle Commande !",
                         "Une nouvelle commande est disponible. Consultez l'espace Commandes.",
@@ -115,6 +119,10 @@ export default function HomeScreen() {
             (newDmd) => {
                 fetchData();
                 playNotificationSound();
+                NotificationService.presentLocalNotification(
+                    "🚲 Nouvelle Demande !",
+                    "Une nouvelle demande de livraison spéciale est disponible."
+                );
                 Alert.alert(
                     "🚲 Nouvelle Demande !",
                     "Une nouvelle demande de livraison spéciale est disponible.",
@@ -145,9 +153,14 @@ export default function HomeScreen() {
                     <Text style={styles.welcomeTitle}>Bonjour,</Text>
                     <Text style={styles.userName}>Partenaire Livreur</Text>
                 </View>
-                <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-                    <Ionicons name="log-out-outline" size={22} color="#ef4444" />
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                    <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.profileBtn}>
+                        <Ionicons name="person-outline" size={22} color="#059669" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+                        <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <View style={styles.statusBanner}>
@@ -161,13 +174,13 @@ export default function HomeScreen() {
                 <View style={styles.grid}>
                     {/* COMMANDES */}
                     <TouchableOpacity
-                        style={[styles.card, { borderLeftColor: '#10b981' }]}
+                        style={styles.card}
                         activeOpacity={0.8}
                         onPress={() => navigation.navigate('Dashboard')}
                     >
                         <View style={styles.cardInfo}>
                             <View style={[styles.iconBox, { backgroundColor: '#ecfdf5' }]}>
-                                <Image source={require('../../assets/Delivery.png')} style={styles.cardIconImg} />
+                                <Ionicons name="cube" size={28} color="#10b981" />
                             </View>
                             <View>
                                 <Text style={styles.cardTitleText}>Commandes</Text>
@@ -188,13 +201,13 @@ export default function HomeScreen() {
 
                     {/* DEMANDES */}
                     <TouchableOpacity
-                        style={[styles.card, { borderLeftColor: '#3b82f6' }]}
+                        style={styles.card}
                         activeOpacity={0.8}
                         onPress={() => navigation.navigate('DemandesList')}
                     >
                         <View style={styles.cardInfo}>
                             <View style={[styles.iconBox, { backgroundColor: '#eff6ff' }]}>
-                                <Image source={require('../../assets/Delivery.png')} style={styles.cardIconImg} />
+                                <Ionicons name="bicycle" size={28} color="#3b82f6" />
                             </View>
                             <View>
                                 <Text style={styles.cardTitleText}>Demandes</Text>
@@ -210,13 +223,13 @@ export default function HomeScreen() {
 
                     {/* HISTORIQUE */}
                     <TouchableOpacity
-                        style={[styles.card, { borderLeftColor: '#f59e0b' }]}
+                        style={styles.card}
                         activeOpacity={0.8}
                         onPress={() => navigation.navigate('History')}
                     >
                         <View style={styles.cardInfo}>
                             <View style={[styles.iconBox, { backgroundColor: '#fffbe6' }]}>
-                                <Image source={require('../../assets/Delivery.png')} style={styles.cardIconImg} />
+                                <Ionicons name="time" size={28} color="#f59e0b" />
                             </View>
                             <View>
                                 <Text style={styles.cardTitleText}>Historique</Text>
@@ -255,6 +268,23 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         color: '#1e293b',
+    },
+    headerTitleText: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    profileBtn: {
+        width: 45,
+        height: 45,
+        borderRadius: 15,
+        backgroundColor: '#ecfdf5',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     logoutBtn: {
         width: 45,
@@ -306,7 +336,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderLeftWidth: 5,
         // Shadows for Android/iOS
         elevation: 3,
         shadowColor: '#64748b',

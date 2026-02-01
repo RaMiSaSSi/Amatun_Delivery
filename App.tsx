@@ -14,8 +14,8 @@ import MapScreen from './src/screens/Commandes/MapScreen';
 import { useAuth, AuthProvider } from './src/context/AuthContext';
 import DemandeDetailScreen from './src/screens/Demandes/DemandeDetailScreen';
 import DemandesListScreen from './src/screens/Demandes/DemandeListScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 import { NotificationService } from './src/services/NotificationService';
-import * as Notifications from 'expo-notifications';
 
 const Stack = createStackNavigator();
 
@@ -65,6 +65,7 @@ function AppNavigator() {
           <Stack.Screen name="MapScreen" component={MapScreen} />
           <Stack.Screen name="DemandesList" component={DemandesListScreen} />
           <Stack.Screen name="DemandeDetail" component={DemandeDetailScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />

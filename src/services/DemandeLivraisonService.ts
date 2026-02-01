@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { DemandeLivraison, StatutDemande } from '../Types/DemandeLivraison';
+import { Type } from '../Types/types';
 
 const API_BASE = 'https://lpvq76hs-8085.uks1.devtunnels.ms/api/demandes'; // à adapter
 
@@ -99,6 +100,18 @@ export class DemandeLivraisonService {
       return data;
     } catch (error) {
       console.error('[FRONT] Exception getMesLivraisons:', error);
+      throw error;
+    }
+  }
+
+  static async countDemandesByType(type: Type): Promise<number> {
+    console.log(`[FRONT] Appel API: countDemandesByType(type=${type})`);
+    try {
+      const res = await fetch(`${API_BASE}/count-by-type?type=${type}`);
+      if (!res.ok) throw new Error('Erreur comptage demandes');
+      return await res.json();
+    } catch (error) {
+      console.error('[FRONT] Exception countDemandesByType:', error);
       throw error;
     }
   }

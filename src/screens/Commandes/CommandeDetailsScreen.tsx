@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { translateStatut, translateType, translatePaiement } from '../../utils/translations';
+import { calculateDistance, calculateDriverRevenue } from '../../utils/revenueCalculator';
 
 // Define the route params type
 type RootStackParamList = {
@@ -25,12 +26,12 @@ export default function CommandeDetailsScreen() {
 
     const [commande, setCommande] = useState<Commande | null>(null);
     const [productsDetails, setProductsDetails] = useState<Produit[]>([]);
-    const [boutique, setBoutique] = useState<Boutique | null>(null);
-    const [boutiqueAddress, setBoutiqueAddress] = useState<Adresse | null>(null);
+    const [boutiquesList, setBoutiquesList] = useState<{ boutique: Boutique, address: Adresse | null }[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSingleBoutique, setIsSingleBoutique] = useState(false);
     const [driverLocation, setDriverLocation] = useState<Location.LocationObject | null>(null);
-    const [distances, setDistances] = useState({ toBoutique: 0, toClient: 0 });
+    const [distances, setDistances] = useState({ toClient: 0 }); // toBoutique is now dynamic per boutique
+    const [driverRevenue, setDriverRevenue] = useState<number>(0);
     const mapRef = React.useRef<MapView | null>(null);
     const { userId } = useAuth();
 
@@ -52,59 +53,46 @@ export default function CommandeDetailsScreen() {
         }
     };
 
-    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-        const R = 6371; // Radius of the earth in km
-        const dLat = deg2rad(lat2 - lat1);
-        const dLon = deg2rad(lon2 - lon1);
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2)
-            ;
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const d = R * c; // Distance in km
-        return d;
-    };
-
-    const deg2rad = (deg: number) => {
-        return deg * (Math.PI / 180);
-    };
-
     useEffect(() => {
         loadDetails();
     }, [commandeId]);
 
     useEffect(() => {
-        if (!boutiqueAddress || !commande) return;
+        if (!commande) return;
 
-        let distToBout = 0;
+        // Calculate distance to client (last leg)
+        // Note: For boutiques, we calculate distance individually in render or a separate effect if needed.
+        // But mainly we want to center the map.
+
         let distToClient = 0;
 
-        if (driverLocation && boutiqueAddress.latitude && boutiqueAddress.longitude) {
-            distToBout = calculateDistance(
-                driverLocation.coords.latitude,
-                driverLocation.coords.longitude,
-                boutiqueAddress.latitude,
-                boutiqueAddress.longitude
-            );
+        // Find the last boutique address if possible? 
+        // Logic: if we have boutiquesList, we can check distance from last boutique to client
+        if (boutiquesList.length > 0 && commande.adresse?.latitude && commande.adresse?.longitude) {
+            const lastBoutique = boutiquesList[boutiquesList.length - 1];
+            if (lastBoutique.address?.latitude && lastBoutique.address?.longitude) {
+                distToClient = calculateDistance(
+                    lastBoutique.address.latitude,
+                    lastBoutique.address.longitude,
+                    commande.adresse.latitude,
+                    commande.adresse.longitude
+                );
+            }
         }
 
-        if (boutiqueAddress.latitude && boutiqueAddress.longitude && commande.adresse?.latitude && commande.adresse?.longitude) {
-            distToClient = calculateDistance(
-                boutiqueAddress.latitude,
-                boutiqueAddress.longitude,
-                commande.adresse.latitude,
-                commande.adresse.longitude
-            );
-        }
-
-        setDistances({ toBoutique: distToBout, toClient: distToClient });
+        setDistances(prev => ({ ...prev, toClient: distToClient }));
 
         // Auto-center map to show all relevant points
         if (mapRef.current) {
             const coordinates = [];
             if (driverLocation) coordinates.push({ latitude: driverLocation.coords.latitude, longitude: driverLocation.coords.longitude });
-            if (boutiqueAddress.latitude && boutiqueAddress.longitude) coordinates.push({ latitude: boutiqueAddress.latitude, longitude: boutiqueAddress.longitude });
+
+            boutiquesList.forEach(b => {
+                if (b.address?.latitude && b.address?.longitude) {
+                    coordinates.push({ latitude: b.address.latitude, longitude: b.address.longitude });
+                }
+            });
+
             if (commande.adresse?.latitude && commande.adresse?.longitude) coordinates.push({ latitude: commande.adresse.latitude, longitude: commande.adresse.longitude });
 
             if (coordinates.length > 0) {
@@ -114,12 +102,25 @@ export default function CommandeDetailsScreen() {
                 });
             }
         }
-    }, [driverLocation, boutiqueAddress, commande]);
+    }, [driverLocation, boutiquesList, commande]);
 
     const loadDetails = async () => {
         try {
             const data = await LivreurService.getCommandeDetails(commandeId);
             setCommande(data);
+
+            // Calculate Revenue
+            if (data && userId) {
+                try {
+                    const livreurInfo = await LivreurService.getLivreurInfos(userId);
+                    const revenue = await calculateDriverRevenue(data, livreurInfo?.moyen);
+                    setDriverRevenue(revenue);
+                } catch (e) {
+                    console.error("Error fetching livreur profile for revenue", e);
+                    const revenue = await calculateDriverRevenue(data);
+                    setDriverRevenue(revenue);
+                }
+            }
 
             if (data && data.produits && data.produits.length > 0) {
                 // Fetch details for all products
@@ -127,27 +128,28 @@ export default function CommandeDetailsScreen() {
                 const prods = await Promise.all(prodPromises);
                 setProductsDetails(prods);
 
-                // Check if all products are from the same boutique
-                const boutiqueIds = prods.map(p => p.boutiqueId);
-                const uniqueBoutiqueIds = [...new Set(boutiqueIds)];
-                const isSingle = uniqueBoutiqueIds.length === 1 && uniqueBoutiqueIds[0] != null;
-                setIsSingleBoutique(isSingle);
+                // Get unique Boutique IDs
+                const boutiqueIds = [...new Set(prods.map(p => p.boutiqueId))];
+                setIsSingleBoutique(boutiqueIds.length === 1);
 
-                if (isSingle) {
-                    const boutId = uniqueBoutiqueIds[0];
-                    const bout = await LivreurService.getBoutiqueById(boutId);
-                    setBoutique(bout);
+                // Fetch details for ALL unique boutiques
+                const boutiquesData: { boutique: Boutique, address: Adresse | null }[] = [];
 
-                    // Retrieve full address if we have an address ID
-                    if (bout.adresseId) {
-                        const addr = await LivreurService.getAdresseById(bout.adresseId);
-                        setBoutiqueAddress(addr);
+                for (const bId of boutiqueIds) {
+                    if (bId != null) {
+                        try {
+                            const b = await LivreurService.getBoutiqueById(bId);
+                            let addr = null;
+                            if (b.adresseId) {
+                                addr = await LivreurService.getAdresseById(b.adresseId);
+                            }
+                            boutiquesData.push({ boutique: b, address: addr });
+                        } catch (err) {
+                            console.error(`Failed to load info for boutique ${bId}`, err);
+                        }
                     }
-                } else {
-                    // Reset boutique info if multiple shops (not handled yet for navigation)
-                    setBoutique(null);
-                    setBoutiqueAddress(null);
                 }
+                setBoutiquesList(boutiquesData);
             }
         } catch (error) {
             console.error("Erreur chargement détails", error);
@@ -206,15 +208,27 @@ export default function CommandeDetailsScreen() {
             await LivreurService.updateStatut(commande.id, Statut.SHIPPED);
             Alert.alert("Livraison commencée", "Vous allez être redirigé vers l'adresse du client.");
 
-            // Redirect to user address IF single boutique (as requested)
-            if (isSingleBoutique && commande.adresse) {
+            // Redirect to FIRST boutique address to start the journey
+            if (boutiquesList.length > 0 && boutiquesList[0].address) {
+                const firstAddr = boutiquesList[0].address;
                 openMap(
-                    `${commande.adresse.rue}, ${commande.adresse.delegation}, ${commande.adresse.gouvernerat}, Tunisia`,
-                    commande.adresse.latitude,
-                    commande.adresse.longitude
+                    `${firstAddr.rue}, ${firstAddr.delegation}, ${firstAddr.gouvernerat}, Tunisia`,
+                    firstAddr.latitude,
+                    firstAddr.longitude
                 );
             }
 
+            loadDetails();
+        } catch (error) {
+            Alert.alert("Erreur", "Impossible de mettre à jour le statut.");
+        }
+    };
+
+    const handleMarkAsReturned = async () => {
+        if (!commande) return;
+        try {
+            await LivreurService.updateStatut(commande.id, Statut.RETURNED);
+            Alert.alert("Succès", "Commande marquée comme retournée !"); // "Commande marked as returned!"
             loadDetails();
         } catch (error) {
             Alert.alert("Erreur", "Impossible de mettre à jour le statut.");
@@ -286,56 +300,68 @@ export default function CommandeDetailsScreen() {
                     </View>
                 </View>
 
-                {/* Boutique info */}
-                {boutique && (
-                    <View style={styles.premiumCard}>
-                        <View style={styles.cardHeaderSmall}>
-                            <Ionicons name="storefront" size={20} color="#10b981" />
-                            <Text style={styles.premiumCardTitle}>Boutique</Text>
-                        </View>
+                {/* Boutiques info */}
+                {boutiquesList.map((item, index) => {
+                    const { boutique, address } = item;
+                    // Calculate distance from driver to THIS boutique (optional visual aid)
+                    let distText = '';
+                    if (driverLocation && address?.latitude && address?.longitude) {
+                        const d = calculateDistance(driverLocation.coords.latitude, driverLocation.coords.longitude, address.latitude, address.longitude);
+                        distText = `${d.toFixed(1)} km`;
+                    }
 
-                        <View style={styles.premiumCardBody}>
-                            <Text style={styles.shopName}>{boutique.nom}</Text>
-                            <View style={styles.infoLine}>
-                                <Ionicons name="call-outline" size={14} color="#64748b" />
-                                <Text style={styles.infoLineText}>{boutique.telephone}</Text>
+                    return (
+                        <View key={boutique.id} style={[styles.premiumCard, { marginBottom: 15 }]}>
+                            <View style={styles.cardHeaderSmall}>
+                                <Ionicons name="storefront" size={20} color="#10b981" />
+                                <Text style={styles.premiumCardTitle}>
+                                    {boutiquesList.length > 1 ? `Boutique ${index + 1}` : 'Boutique'}
+                                </Text>
                             </View>
 
-                            {boutiqueAddress && (
-                                <View style={styles.addressBox}>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.addressText}>
-                                            {boutiqueAddress.rue}, {boutiqueAddress.delegation}, {boutiqueAddress.gouvernerat}
-                                        </Text>
-                                        {distances.toBoutique > 0 && (
-                                            <Text style={styles.distanceInfo}>
-                                                <Ionicons name="navigate" size={12} /> À {distances.toBoutique.toFixed(1)} km
-                                            </Text>
-                                        )}
-                                    </View>
-                                    <View style={styles.actionButtons}>
-                                        <TouchableOpacity
-                                            onPress={() => openMap(
-                                                `${boutiqueAddress.rue}, ${boutiqueAddress.delegation}, ${boutiqueAddress.gouvernerat}, Tunisia`,
-                                                boutiqueAddress.latitude,
-                                                boutiqueAddress.longitude
-                                            )}
-                                            style={styles.circleActionBtn}
-                                        >
-                                            <Ionicons name="location" size={22} color="#3b82f6" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            onPress={() => boutiqueAddress.latitude && boutiqueAddress.longitude && showNavigationInApp(boutiqueAddress.latitude, boutiqueAddress.longitude, boutique.nom)}
-                                            style={[styles.circleActionBtn, { backgroundColor: '#ecfdf5' }]}
-                                        >
-                                            <Ionicons name="map" size={22} color="#10b981" />
-                                        </TouchableOpacity>
-                                    </View>
+                            <View style={styles.premiumCardBody}>
+                                <Text style={styles.shopName}>{boutique.nom}</Text>
+                                <View style={styles.infoLine}>
+                                    <Ionicons name="call-outline" size={14} color="#64748b" />
+                                    <Text style={styles.infoLineText}>{boutique.telephone}</Text>
                                 </View>
-                            )}
+
+                                {address && (
+                                    <View style={styles.addressBox}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.addressText}>
+                                                {address.rue}, {address.delegation}, {address.gouvernerat}
+                                            </Text>
+                                            {distText ? (
+                                                <Text style={styles.distanceInfo}>
+                                                    <Ionicons name="navigate" size={12} /> À {distText} de vous
+                                                </Text>
+                                            ) : null}
+                                        </View>
+                                        <View style={styles.actionButtons}>
+                                            <TouchableOpacity
+                                                onPress={() => openMap(
+                                                    `${address.rue}, ${address.delegation}, ${address.gouvernerat}, Tunisia`,
+                                                    address.latitude,
+                                                    address.longitude
+                                                )}
+                                                style={styles.circleActionBtn}
+                                            >
+                                                <Ionicons name="location" size={22} color="#3b82f6" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                onPress={() => address.latitude && address.longitude && showNavigationInApp(address.latitude, address.longitude, boutique.nom)}
+                                                style={[styles.circleActionBtn, { backgroundColor: '#ecfdf5' }]}
+                                            >
+                                                <Ionicons name="map" size={22} color="#10b981" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                )}
+                            </View>
                         </View>
-                    </View>
-                )}
+                    );
+                })}
 
                 {/* Client info */}
                 <View style={[styles.premiumCard, { marginTop: 15 }]}>
@@ -424,7 +450,9 @@ export default function CommandeDetailsScreen() {
                                         resizeMode="cover"
                                     />
                                 ) : (
-                                    <Image source={require('../../../assets/Delivery.png')} style={styles.placeholderImg} />
+                                    <View style={styles.placeholderImg}>
+                                        <Ionicons name="cube-outline" size={24} color="#94a3b8" />
+                                    </View>
                                 )}
                             </View>
                             <View style={{ flex: 1 }}>
@@ -446,6 +474,15 @@ export default function CommandeDetailsScreen() {
                         <Text style={styles.totalRowLabel}>Frais livraison</Text>
                         <Text style={styles.totalRowValue}>{(commande.prixTotalAvecLivraison - commande.prixTotalSansLivraison).toFixed(2)} TND</Text>
                     </View>
+
+                    {/* Revenue Display */}
+                    <View style={[styles.totalRowLine, { marginTop: 5 }]}>
+                        <Text style={[styles.totalRowLabel, { color: '#fbbf24' }]}>Votre commission (est.)</Text>
+                        <Text style={[styles.totalRowValue, { color: '#fbbf24' }]}>
+                            {driverRevenue > 0 ? `${driverRevenue.toFixed(2)} TND` : 'Calcul...'}
+                        </Text>
+                    </View>
+
                     <View style={styles.grandTotalBorder} />
                     <View style={styles.totalRowLine}>
                         <Text style={styles.totalMainLabel}>Total à encaisser</Text>
@@ -486,10 +523,17 @@ export default function CommandeDetailsScreen() {
                                 </TouchableOpacity>
                             )}
                             {commande.statut === Statut.SHIPPED && (
-                                <TouchableOpacity onPress={handleMarkAsDelivered} style={[styles.primaryActionButton, { backgroundColor: '#10b981' }]}>
-                                    <Ionicons name="checkmark-done" size={22} color="white" />
-                                    <Text style={styles.primaryActionButtonText}>MARQUER COMME LIVRÉ</Text>
-                                </TouchableOpacity>
+                                <View style={styles.dualActions}>
+                                    <TouchableOpacity
+                                        onPress={handleMarkAsReturned}
+                                        style={[styles.ignoreButton, { borderColor: '#ef4444', backgroundColor: '#fff1f2' }]}
+                                    >
+                                        <Text style={[styles.ignoreButtonText, { color: '#ef4444' }]}>RETOUR</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={handleMarkAsDelivered} style={[styles.acceptButton, { backgroundColor: '#10b981' }]}>
+                                        <Text style={styles.acceptButtonText}>MARQUER COMME LIVRÉ</Text>
+                                    </TouchableOpacity>
+                                </View>
                             )}
                         </>
                     )}

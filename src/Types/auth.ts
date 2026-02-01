@@ -32,7 +32,6 @@ export interface Livreur extends UtilisateurInscrit {
 
   moyen: MoyenTransport;
   dispo: boolean;
-  enligne: boolean;
 }
 
 export interface AuthenticationRequest {

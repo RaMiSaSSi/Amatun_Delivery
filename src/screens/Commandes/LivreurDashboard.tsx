@@ -6,13 +6,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av'; // Pour le son de notification
+import { useAudioPlayer } from 'expo-audio'; // Pour le son de notification
 
 import { LivreurService } from '../../services/LivreurService';
 import { WebSocketService } from '../../services/websocket';
 import { Commande, Statut } from '../../Types/types';
 import { useAuth } from '../../context/AuthContext';
 import { translateStatut } from '../../utils/translations';
+import { NotificationService } from '../../services/NotificationService';
 
 
 export default function LivreurDashboard() {
@@ -33,13 +34,12 @@ export default function LivreurDashboard() {
     commandesRef.current = commandes;
   }, [commandes]);
 
+  const player = useAudioPlayer(require('../../../assets/Notification.mp3'));
+
   // Jouer le son de notification
   const playNotificationSound = async () => {
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/Notification.mp3') // Assurez-vous d'avoir un fichier son
-      );
-      await sound.playAsync();
+      player.play();
     } catch (error) {
       console.log('Erreur son notification', error);
     }
@@ -112,6 +112,10 @@ export default function LivreurDashboard() {
           }
           console.log('✅ Ajout de la commande à la liste.');
           playNotificationSound();
+          NotificationService.presentLocalNotification(
+            "📦 Nouvelle Commande !",
+            `La commande #${newCmd.id} est maintenant disponible.`
+          );
           Alert.alert("Nouvelle Commande", `Commande #${newCmd.id} disponible !`);
           // Ajout en haut de la liste, en gardant le tri existant
           return [newCmd, ...prev].sort((a, b) => b.id - a.id);
@@ -138,8 +142,12 @@ export default function LivreurDashboard() {
         });
 
       } else if (msg.type === 'PERSONAL_NOTIFICATION') {
-        console.log('dring dring dring notifiication perso');
+        console.log('🔔 Notification personnelle reçue');
         playNotificationSound();
+        NotificationService.presentLocalNotification(
+          "🔔 Notification",
+          msg.data
+        );
         Alert.alert("Notification Personnelle", msg.data);
         fetchCommandes(); // Pour être sûr d'avoir les dernières données
       }
@@ -232,7 +240,7 @@ export default function LivreurDashboard() {
         {/* Header Carte */}
         <View style={styles.cardHeader}>
           <View style={styles.iconContainer}>
-            <Image source={require('../../../assets/Delivery.png')} style={styles.dashIconImg} />
+            <Ionicons name="cube-outline" size={20} color="#059669" />
           </View>
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={styles.orderId}>#{item.id}</Text>

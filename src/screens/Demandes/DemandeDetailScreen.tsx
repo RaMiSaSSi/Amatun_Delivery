@@ -139,7 +139,7 @@ const DemandeDetailScreen = () => {
           <View style={styles.stepContainer}>
             <View style={styles.stepIndicator}>
               <View style={[styles.stepIcon, { backgroundColor: '#eff6ff' }]}>
-                <Image source={require('../../../assets/Delivery.png')} style={styles.detailIconImg} />
+                <Ionicons name="cube" size={18} color="#3b82f6" />
               </View>
               <View style={styles.stepLine} />
             </View>
@@ -166,7 +166,7 @@ const DemandeDetailScreen = () => {
           <View style={styles.stepContainer}>
             <View style={styles.stepIndicator}>
               <View style={[styles.stepIcon, { backgroundColor: '#f0fdf4' }]}>
-                <Image source={require('../../../assets/Delivery.png')} style={styles.detailIconImg} />
+                <Ionicons name="location" size={18} color="#10b981" />
               </View>
             </View>
             <View style={styles.stepContent}>

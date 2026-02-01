@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 import { StorageService } from './storage';
+import { Type } from '../Types/types';
 
 // IMPORTANT : Mettez l'IP de votre machine, pas localhost pour le mobile
 export const BASE_URL = 'https://lpvq76hs-8085.uks1.devtunnels.ms';
@@ -119,8 +120,22 @@ export const LivreurService = {
     return response.data;
   },
 
+  countCommandesByType: async (livreurId: number, type: Type) => {
+    const response = await api.get(`/livreur/commandes/count-by-type`, {
+      params: { livreurId, type }
+    });
+    return response.data;
+  },
 
+  countBoutiquesInCommande: async (commandeId: number) => {
+    const response = await api.get(`/livreur/commande/${commandeId}/boutiques/count`);
+    return response.data;
+  },
 
+  getLivreurInfos: async (id: number) => {
+    const response = await api.get(`/livreur/${id}/infos`);
+    return response.data;
+  },
 };
 
 export default api;
