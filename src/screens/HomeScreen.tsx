@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, Image, Switch, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,8 +20,15 @@ export default function HomeScreen() {
     const [commandesCount, setCommandesCount] = useState(0);
     const [demandesCount, setDemandesCount] = useState(0);
     const [confirmedLast3Days, setConfirmedLast3Days] = useState(0);
+    const [isOnline, setIsOnline] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState(false);
 
     const player = useAudioPlayer(require('../../assets/Notification.mp3'));
+    const isOnlineRef = useRef(isOnline);
+
+    useEffect(() => {
+        isOnlineRef.current = isOnline;
+    }, [isOnline]);
 
     // Pour le son
     const playNotificationSound = async () => {
@@ -68,6 +75,10 @@ export default function HomeScreen() {
             }));
             setConfirmedLast3Days(totalConfirmed);
 
+            // 4. Charger l'état en ligne
+            const info = await LivreurService.getLivreurInfos(userId);
+            setIsOnline(info.online);
+
         } catch (e) {
             console.error(e);
         }
@@ -98,7 +109,7 @@ export default function HomeScreen() {
         const wsCmd = new WebSocketService((msg) => {
             if (msg.type === 'NEW_ORDER' || msg.type === 'ORDER_ACCEPTED') {
                 fetchData();
-                if (msg.type === 'NEW_ORDER') {
+                if (msg.type === 'NEW_ORDER' && isOnlineRef.current) {
                     playNotificationSound();
                     NotificationService.presentLocalNotification(
                         "📦 Nouvelle Commande !",
@@ -118,16 +129,18 @@ export default function HomeScreen() {
         const wsDmd = new DemandeWebSocketService(
             (newDmd) => {
                 fetchData();
-                playNotificationSound();
-                NotificationService.presentLocalNotification(
-                    "🚲 Nouvelle Demande !",
-                    "Une nouvelle demande de livraison spéciale est disponible."
-                );
-                Alert.alert(
-                    "🚲 Nouvelle Demande !",
-                    "Une nouvelle demande de livraison spéciale est disponible.",
-                    [{ text: "Voir", onPress: () => navigation.navigate('DemandesList') }, { text: "OK" }]
-                );
+                if (isOnlineRef.current) {
+                    playNotificationSound();
+                    NotificationService.presentLocalNotification(
+                        "🚲 Nouvelle Demande !",
+                        "Une nouvelle demande de livraison spéciale est disponible."
+                    );
+                    Alert.alert(
+                        "🚲 Nouvelle Demande !",
+                        "Une nouvelle demande de livraison spéciale est disponible.",
+                        [{ text: "Voir", onPress: () => navigation.navigate('DemandesList') }, { text: "OK" }]
+                    );
+                }
             },
             (acceptedDmd) => {
                 fetchData();
@@ -142,6 +155,22 @@ export default function HomeScreen() {
             wsDmd.deactivate();
         };
     }, [userId]);
+
+    const handleToggleStatus = async (value: boolean) => {
+        if (!userId) return;
+        setLoadingStatus(true);
+        try {
+            const updated = await LivreurService.updateStatus(userId, value);
+            setIsOnline(updated.online);
+        } catch (error) {
+            console.error('Erreur update status', error);
+            Alert.alert("Erreur", "Impossible de changer votre état. Veuillez réessayer.");
+            // Revenir à l'ancien état en cas d'erreur
+            setIsOnline(!value);
+        } finally {
+            setLoadingStatus(false);
+        }
+    };
 
 
     return (
@@ -163,9 +192,24 @@ export default function HomeScreen() {
                 </View>
             </View>
 
-            <View style={styles.statusBanner}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>Vous êtes en ligne</Text>
+            <View style={[styles.statusBanner, { backgroundColor: isOnline ? '#f0fdf4' : '#f8fafc' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    <View style={[styles.statusDot, { backgroundColor: isOnline ? '#10b981' : '#94a3b8' }]} />
+                    <Text style={[styles.statusText, { color: isOnline ? '#047857' : '#475569' }]}>
+                        {isOnline ? 'Vous êtes en ligne' : 'Vous êtes hors ligne'}
+                    </Text>
+                </View>
+                {loadingStatus ? (
+                    <ActivityIndicator size="small" color="#10b981" />
+                ) : (
+                    <Switch
+                        value={isOnline}
+                        onValueChange={handleToggleStatus}
+                        trackColor={{ false: "#cbd5e1", true: "#6ee7b7" }}
+                        thumbColor={isOnline ? "#10b981" : "#f4f3f4"}
+                        ios_backgroundColor="#3e3e3e"
+                    />
+                )}
             </View>
 
             <View style={styles.content}>

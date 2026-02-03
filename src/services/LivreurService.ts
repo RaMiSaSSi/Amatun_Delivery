@@ -136,6 +136,13 @@ export const LivreurService = {
     const response = await api.get(`/livreur/${id}/infos`);
     return response.data;
   },
+
+  updateStatus: async (livreurId: number, online: boolean) => {
+    const response = await api.put(`/livreur/status`, null, {
+      params: { livreurId, online }
+    });
+    return response.data;
+  },
 };
 
 export default api;

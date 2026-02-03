@@ -11,6 +11,10 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { translateStatut, translateType, translatePaiement } from '../../utils/translations';
 import { calculateDistance, calculateDriverRevenue } from '../../utils/revenueCalculator';
+import { useLivreur } from '../../hooks/useLivreur';
+import { useCommandes } from '../../hooks/useCommandes';
+import { useHaptics } from '../../hooks/useHaptics';
+import * as Haptics from 'expo-haptics';
 
 // Define the route params type
 type RootStackParamList = {
@@ -33,7 +37,11 @@ export default function CommandeDetailsScreen() {
     const [distances, setDistances] = useState({ toClient: 0 }); // toBoutique is now dynamic per boutique
     const [driverRevenue, setDriverRevenue] = useState<number>(0);
     const mapRef = React.useRef<MapView | null>(null);
+    const { impact, notification: hapticNotification } = useHaptics();
+    const { profile, isBlockedForCmd, getDeliveryFee, refreshProfile } = useLivreur();
+    const { accept, updateStatut } = useCommandes('');
     const { userId } = useAuth();
+
 
     useEffect(() => {
         requestLocation();
@@ -112,11 +120,10 @@ export default function CommandeDetailsScreen() {
             // Calculate Revenue
             if (data && userId) {
                 try {
-                    const livreurInfo = await LivreurService.getLivreurInfos(userId);
-                    const revenue = await calculateDriverRevenue(data, livreurInfo?.moyen);
+                    const revenue = await calculateDriverRevenue(data, profile?.moyen);
                     setDriverRevenue(revenue);
                 } catch (e) {
-                    console.error("Error fetching livreur profile for revenue", e);
+                    console.error("Error fetching revenue", e);
                     const revenue = await calculateDriverRevenue(data);
                     setDriverRevenue(revenue);
                 }
@@ -188,8 +195,21 @@ export default function CommandeDetailsScreen() {
 
     const handleAccept = async () => {
         if (!userId || !commande) return;
+
+        if (isBlockedForCmd(commande)) {
+            hapticNotification(Haptics.NotificationFeedbackType.Warning);
+            const fee = getDeliveryFee(commande);
+            Alert.alert(
+                "Plafond atteint",
+                `En acceptant cette commande (+${fee} TND de frais), vous dépasserez votre plafond de cash autorisé. Veuillez verser l'argent encaissé pour continuer.`,
+                [{ text: "Compris" }]
+            );
+            return;
+        }
+
         try {
-            await LivreurService.acceptCommande(commande.id, userId);
+            impact(Haptics.ImpactFeedbackStyle.Heavy);
+            await accept(commande.id);
             Alert.alert("Succès", "Commande acceptée !");
             loadDetails();
         } catch (error: any) {
@@ -204,11 +224,11 @@ export default function CommandeDetailsScreen() {
 
     const handleStartDelivery = async () => {
         if (!commande) return;
+        impact(Haptics.ImpactFeedbackStyle.Medium);
         try {
-            await LivreurService.updateStatut(commande.id, Statut.SHIPPED);
+            await updateStatut({ cmdId: commande.id, statut: Statut.SHIPPED });
             Alert.alert("Livraison commencée", "Vous allez être redirigé vers l'adresse du client.");
 
-            // Redirect to FIRST boutique address to start the journey
             if (boutiquesList.length > 0 && boutiquesList[0].address) {
                 const firstAddr = boutiquesList[0].address;
                 openMap(
@@ -501,16 +521,30 @@ export default function CommandeDetailsScreen() {
                 {/* Action Buttons */}
                 <View style={styles.bottomActions}>
                     {(commande.statut === Statut.CONFIRMED && !commande.livreurId) && (
-                        <View style={styles.dualActions}>
-                            <TouchableOpacity
-                                onPress={() => navigation.goBack()}
-                                style={styles.ignoreButton}
-                            >
-                                <Text style={styles.ignoreButtonText}>IGNORER</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleAccept} style={styles.acceptButton}>
-                                <Text style={styles.acceptButtonText}>ACCEPTER</Text>
-                            </TouchableOpacity>
+                        <View style={{ width: '100%' }}>
+                            {isBlockedForCmd(commande) && (
+                                <View style={[styles.warningContainer, { marginBottom: 15, backgroundColor: '#fee2e2', borderColor: '#fecaca' }]}>
+                                    <Ionicons name="alert-circle" size={18} color="#ef4444" />
+                                    <Text style={[styles.warningMsg, { color: '#991b1b' }]}>
+                                        Plafond dépassé (+{getDeliveryFee(commande)} TND frais). Versez votre solde pour accepter.
+                                    </Text>
+                                </View>
+                            )}
+                            <View style={styles.dualActions}>
+                                <TouchableOpacity
+                                    onPress={() => navigation.goBack()}
+                                    style={styles.ignoreButton}
+                                >
+                                    <Text style={styles.ignoreButtonText}>IGNORER</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={handleAccept}
+                                    style={[styles.acceptButton, isBlockedForCmd(commande) && { backgroundColor: '#94a3b8', elevation: 0 }]}
+                                    disabled={isBlockedForCmd(commande)}
+                                >
+                                    <Text style={styles.acceptButtonText}>{isBlockedForCmd(commande) ? 'BLOQUÉ' : 'ACCEPTER'}</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     )}
 

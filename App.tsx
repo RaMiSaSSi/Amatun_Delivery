@@ -15,9 +15,19 @@ import { useAuth, AuthProvider } from './src/context/AuthContext';
 import DemandeDetailScreen from './src/screens/Demandes/DemandeDetailScreen';
 import DemandesListScreen from './src/screens/Demandes/DemandeListScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import GrandeCommandeDetailScreen from './src/screens/Commandes/GrandeCommandeDetailScreen';
 import { NotificationService } from './src/services/NotificationService';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const Stack = createStackNavigator();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
+  },
+});
 
 function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -66,6 +76,7 @@ function AppNavigator() {
           <Stack.Screen name="DemandesList" component={DemandesListScreen} />
           <Stack.Screen name="DemandeDetail" component={DemandeDetailScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="GrandeCommandeDetail" component={GrandeCommandeDetailScreen} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />
@@ -76,12 +87,14 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SafeAreaProvider>
-        <NavigationContainer>
-          <AppNavigator />
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <SafeAreaProvider>
+          <NavigationContainer>
+            <AppNavigator />
+          </NavigationContainer>
+        </SafeAreaProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }

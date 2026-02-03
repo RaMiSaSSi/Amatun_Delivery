@@ -92,8 +92,13 @@ export const calculateDriverRevenue = async (commande: Commande, transportMode?:
             );
         }
 
-        // 4. Calculate Revenue (default 0.8 TND / km)
-        return totalDistance * 0.8;
+        // 4. Calculate Revenue based on tiered distance
+        if (totalDistance <= 3) return 3.0;
+        if (totalDistance <= 6) return 3.5;
+        if (totalDistance <= 10) return 5.0;
+
+        // Beyond 10km: 5.0 TND base + 0.5 TND per extra km
+        return 5.0 + (totalDistance - 10) * 0.5;
 
     } catch (error) {
         console.error("Error calculating revenue:", error);

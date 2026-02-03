@@ -88,6 +88,52 @@ export default function ProfileScreen() {
                     </View>
                 </View>
 
+                <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>Ma Caisse</Text>
+                    <View style={styles.infoCard}>
+                        <View style={styles.balanceHeader}>
+                            <View style={styles.balanceInfo}>
+                                <View style={[styles.iconContainer, { backgroundColor: '#ecfdf5' }]}>
+                                    <Ionicons name="wallet-outline" size={20} color="#059669" />
+                                </View>
+                                <View>
+                                    <Text style={styles.balanceLabel}>Solde Cash</Text>
+                                    <Text style={styles.balanceValue}>{profile?.cashbalance?.toFixed(2) || '0.00'} <Text style={styles.currency}>TND</Text></Text>
+                                </View>
+                            </View>
+                            <View style={styles.limitContainer}>
+                                <Text style={styles.limitLabel}>Plafond</Text>
+                                <Text style={styles.limitValue}>{profile?.plafond?.toFixed(2) || '0.00'} TND</Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.progressBarContainer}>
+                            <View
+                                style={[
+                                    styles.progressBarFill,
+                                    {
+                                        width: `${Math.min(((profile?.cashbalance || 0) / (profile?.plafond || 1)) * 100, 100)}%`,
+                                        backgroundColor: ((profile?.cashbalance || 0) / (profile?.plafond || 1)) > 0.9 ? '#ef4444' :
+                                            ((profile?.cashbalance || 0) / (profile?.plafond || 1)) > 0.7 ? '#f59e0b' : '#10b981'
+                                    }
+                                ]}
+                            />
+                        </View>
+
+                        <View style={styles.percentageRow}>
+                            <Text style={styles.percentageText}>
+                                {Math.round(((profile?.cashbalance || 0) / (profile?.plafond || 1)) * 100)}% utilisé
+                            </Text>
+                            {((profile?.cashbalance || 0) / (profile?.plafond || 1)) > 0.9 && (
+                                <View style={styles.warningBadge}>
+                                    <Ionicons name="alert-circle" size={12} color="#fff" />
+                                    <Text style={styles.warningText}>Attention</Text>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                </View>
+
                 {/* Info Sections */}
                 <View style={styles.infoSection}>
                     <Text style={styles.sectionTitle}>Coordonnées</Text>
@@ -124,8 +170,6 @@ export default function ProfileScreen() {
                 <View style={styles.infoSection}>
                     <Text style={styles.sectionTitle}>États du service</Text>
                     <View style={styles.infoCard}>
-                        
-
 
                         <View style={styles.infoRow}>
                             <View style={styles.infoIconBox}>
@@ -326,5 +370,87 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
         fontSize: 12,
         marginTop: 20,
+    },
+    balanceHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        marginBottom: 15,
+    },
+    balanceInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    iconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    balanceLabel: {
+        fontSize: 12,
+        color: '#64748b',
+        marginBottom: 2,
+        fontWeight: '500',
+    },
+    balanceValue: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    currency: {
+        fontSize: 12,
+        color: '#94a3b8',
+        fontWeight: '600',
+    },
+    limitContainer: {
+        alignItems: 'flex-end',
+    },
+    limitLabel: {
+        fontSize: 11,
+        color: '#94a3b8',
+        marginBottom: 2,
+    },
+    limitValue: {
+        fontSize: 14,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    progressBarContainer: {
+        height: 8,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 4,
+        overflow: 'hidden',
+        marginBottom: 10,
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: 4,
+    },
+    percentageRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    percentageText: {
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    warningBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        backgroundColor: '#ef4444',
+        gap: 4,
+    },
+    warningText: {
+        fontSize: 10,
+        color: '#fff',
+        fontWeight: 'bold',
     }
 });

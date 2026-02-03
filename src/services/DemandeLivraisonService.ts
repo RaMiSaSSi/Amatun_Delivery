@@ -138,19 +138,18 @@ export class DemandeWebSocketService {
     });
 
     this.client.onConnect = () => {
-      // Nouvelles demandes à traiter (Ciblées par disponibilité côté backend)
+      // Nouvelles demandes à traiter (Ciblées par disponibilité + état online côté backend)
       if (livreurId) {
         this.client.subscribe(`/topic/livreurs/${livreurId}`, (msg) => {
-          this.onNewDemande(JSON.parse(msg.body));
-        });
-      } else {
-        // Fallback global si pas ID (Optionnel, mais plus sûr pour les anciennes versions backend)
-        this.client.subscribe('/topic/livreurs', (msg) => {
-          this.onNewDemande(JSON.parse(msg.body));
+          const data = JSON.parse(msg.body);
+          // Filtrage par type pour éviter les doublons avec les commandes classiques
+          if (data.typeArticle) {
+            this.onNewDemande(data);
+          }
         });
       }
 
-      // Demandes acceptées (par un autre livreur)
+      // Demandes acceptées (Global pour synchroniser les états)
       this.client.subscribe('/topic/commande-accepted', (msg) => {
         this.onDemandeAcceptee(JSON.parse(msg.body));
       });

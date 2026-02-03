@@ -5,10 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
 import { DemandeLivraisonService } from '../../services/DemandeLivraisonService';
-import { BASE_URL } from '../../services/LivreurService';
+import { BASE_URL, LivreurService } from '../../services/LivreurService';
 
 import { useAuth } from '../../context/AuthContext';
 import { translateStatutDemande, translatePaiement } from '../../utils/translations';
+import { useLivreur } from '../../hooks/useLivreur';
+import { useHaptics } from '../../hooks/useHaptics';
+import * as Haptics from 'expo-haptics';
 
 const DemandeDetailScreen = () => {
   const route = useRoute<any>();
@@ -16,8 +19,12 @@ const DemandeDetailScreen = () => {
   const { userId } = useAuth();
   const { demandeId } = route.params;
 
+  const { impact, notification: hapticNotification } = useHaptics();
+  const { profile, isBlockedByTotal, refreshProfile } = useLivreur();
+
   const [demande, setDemande] = useState<DemandeLivraison | null>(null);
   const [loading, setLoading] = useState(false);
+
 
   useEffect(() => {
     fetchDetail();
@@ -59,12 +66,25 @@ const DemandeDetailScreen = () => {
 
   // Action : Accepter la demande
   const handleAccept = async () => {
-    if (!userId) return;
+    if (!userId || !demande) return;
+
+    if (isBlockedByTotal) {
+      hapticNotification(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        "Plafond atteint",
+        "Vous avez dépassé votre plafond de cash autorisé. Veuillez verser l'argent encaissé pour pouvoir accepter de nouvelles commandes.",
+        [{ text: "Compris" }]
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      await DemandeLivraisonService.accepterDemande(demande!.id, userId);
+      impact(Haptics.ImpactFeedbackStyle.Heavy);
+      await DemandeLivraisonService.accepterDemande(demande.id, userId);
       Alert.alert('Succès', 'Vous avez accepté la course !');
-      fetchDetail(); // Rafraîchir pour voir les nouvelles actions
+      fetchDetail();
+      refreshProfile();
     } catch (error) {
       Alert.alert('Erreur', 'Cette demande a probablement déjà été prise par un autre livreur.');
       navigation.goBack();
@@ -76,11 +96,13 @@ const DemandeDetailScreen = () => {
   // Action : Changer statut (En cours, Livrée, Retour)
   const handleChangeStatus = async (newStatut: StatutDemande) => {
     setLoading(true);
+    impact(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await DemandeLivraisonService.updateStatut(demande!.id, newStatut);
       if (newStatut === StatutDemande.LIVREE) {
         Alert.alert('Félicitations', 'Course terminée !');
-        navigation.goBack(); // Retour liste
+        refreshProfile();
+        navigation.goBack();
       } else {
         fetchDetail();
       }
@@ -220,21 +242,31 @@ const DemandeDetailScreen = () => {
         {/* Action Bottom Section */}
         <View style={styles.bottomSection}>
           {demande.statut === StatutDemande.CONFIRMEE && (
-            <View style={styles.dualBtnRow}>
-              <TouchableOpacity
-                style={styles.btnSecondary}
-                onPress={() => navigation.goBack()}
-              >
-                <Text style={styles.btnSecondaryText}>IGNORER</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.btnPrimary}
-                onPress={handleAccept}
-                disabled={loading}
-              >
-                <Text style={styles.btnPrimaryText}>{loading ? 'Traitement...' : 'ACCEPTER COURSE'}</Text>
-                <Ionicons name="arrow-forward" size={20} color="white" />
-              </TouchableOpacity>
+            <View style={{ width: '100%' }}>
+              {isBlockedByTotal && (
+                <View style={[styles.warningContainer, { marginBottom: 15, backgroundColor: '#fee2e2', borderColor: '#fecaca' }]}>
+                  <Ionicons name="alert-circle" size={18} color="#ef4444" />
+                  <Text style={[styles.warningMsg, { color: '#991b1b' }]}>
+                    Plafond dépassé ({profile?.cashbalance} TND). Versez votre solde pour accepter.
+                  </Text>
+                </View>
+              )}
+              <View style={styles.dualBtnRow}>
+                <TouchableOpacity
+                  style={styles.btnSecondary}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Text style={styles.btnSecondaryText}>IGNORER</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btnPrimary, isBlockedByTotal && { backgroundColor: '#94a3b8', elevation: 0 }]}
+                  onPress={handleAccept}
+                  disabled={loading || isBlockedByTotal}
+                >
+                  <Text style={styles.btnPrimaryText}>{isBlockedByTotal ? 'BLOQUÉ' : (loading ? 'Traitement...' : 'ACCEPTER COURSE')}</Text>
+                  {!isBlockedByTotal && <Ionicons name="arrow-forward" size={20} color="white" />}
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -451,7 +483,18 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   successTitle: { fontSize: 20, fontWeight: 'bold', color: '#166534' },
-  successSub: { fontSize: 14, color: '#15803d', marginTop: 5 }
+  successSub: { fontSize: 14, color: '#15803d', marginTop: 5 },
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fffbeb',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fef3c7'
+  },
+  warningMsg: { fontSize: 13, color: '#b45309', fontWeight: '600' },
 });
 
 export default DemandeDetailScreen;

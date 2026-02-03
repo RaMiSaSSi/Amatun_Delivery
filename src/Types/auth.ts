@@ -32,6 +32,9 @@ export interface Livreur extends UtilisateurInscrit {
 
   moyen: MoyenTransport;
   dispo: boolean;
+  online:boolean;
+  plafond:number;
+  cashbalance:number;
 }
 
 export interface AuthenticationRequest {

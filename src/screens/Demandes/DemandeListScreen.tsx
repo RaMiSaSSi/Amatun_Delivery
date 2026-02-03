@@ -7,9 +7,13 @@ import { useAudioPlayer } from 'expo-audio'; // Pour le son
 
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
 import { DemandeLivraisonService, DemandeWebSocketService } from '../../services/DemandeLivraisonService';
+import { LivreurService } from '../../services/LivreurService';
 import { useAuth } from '../../context/AuthContext';
 import { translateStatutDemande } from '../../utils/translations';
 import { NotificationService } from '../../services/NotificationService';
+import { useLivreur } from '../../hooks/useLivreur';
+import { useHaptics } from '../../hooks/useHaptics';
+import * as Haptics from 'expo-haptics';
 
 const DemandesListScreen = () => {
   const navigation = useNavigation<any>();
@@ -38,6 +42,9 @@ const DemandesListScreen = () => {
     }
   };
 
+  const { impact, notification: hapticNotification } = useHaptics();
+  const { profile, isBlockedByTotal, refreshProfile } = useLivreur();
+
   useEffect(() => {
     loadInitialData();
 
@@ -53,6 +60,7 @@ const DemandesListScreen = () => {
       if (nextAppState === 'active') {
         console.log('App revenue au premier plan (Demandes), rafraîchissement...');
         loadInitialData();
+        refreshProfile();
       }
     };
     const subscription = AppState.addEventListener('change', handleAppStateChange);
@@ -62,6 +70,8 @@ const DemandesListScreen = () => {
       subscription.remove();
     };
   }, []);
+
+
 
   const loadInitialData = async () => {
     setLoading(true);
@@ -117,6 +127,7 @@ const DemandesListScreen = () => {
         // Ajout si nouvelle pour moi
         return [demande, ...prev];
       });
+      refreshProfile(); // Update balance
     }
   };
 
@@ -132,6 +143,7 @@ const DemandesListScreen = () => {
         if (prev.find(d => d.id === demande.id)) return prev.map(d => d.id === demande.id ? demande : d);
         return [demande, ...prev];
       });
+      refreshProfile(); // Update balance
     }
   };
 
@@ -139,6 +151,7 @@ const DemandesListScreen = () => {
   useEffect(() => {
     if (activeTab === 'OFFRES') {
       loadInitialData();
+      refreshProfile();
     }
   }, [selectedDate, userId]);
 
@@ -189,11 +202,23 @@ const DemandesListScreen = () => {
 
   const handleAccept = async (demande: DemandeLivraison) => {
     if (!userId) return;
+
+    if (isBlockedByTotal) {
+      hapticNotification(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        "Plafond atteint",
+        "Vous avez dépassé votre plafond de cash autorisé. Veuillez verser l'argent encaissé pour pouvoir accepter de nouvelles commandes.",
+        [{ text: "Compris" }]
+      );
+      return;
+    }
+
     try {
+      impact(Haptics.ImpactFeedbackStyle.Heavy);
       await DemandeLivraisonService.accepterDemande(demande.id, userId);
       Alert.alert('Succès', 'Course acceptée !');
-      // On recharge les données
       loadInitialData();
+      refreshProfile();
     } catch (e) {
       Alert.alert('Erreur', 'Cette demande n\'est plus disponible.');
       loadInitialData();
@@ -234,10 +259,11 @@ const DemandesListScreen = () => {
               <Text style={styles.btnTextIgnoreSm}>Ignorer</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.btnAcceptSm}
+              style={[styles.btnAcceptSm, isBlockedByTotal && { backgroundColor: '#94a3b8', elevation: 0 }]}
               onPress={(e) => { handleAccept(item); }}
+              disabled={isBlockedByTotal}
             >
-              <Text style={styles.btnTextAcceptSm}>Accepter</Text>
+              <Text style={styles.btnTextAcceptSm}>{isBlockedByTotal ? 'Bloqué' : 'Accepter'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -296,6 +322,17 @@ const DemandesListScreen = () => {
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* Blocked Warning Banner */}
+      {isBlockedByTotal && activeTab === 'OFFRES' && (
+        <View style={styles.blockedBanner}>
+          <Ionicons name="alert-circle" size={24} color="#ef4444" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.blockedBannerText}>Plafond dépassé</Text>
+            <Text style={styles.blockedBannerSub}>Versez votre solde ({profile?.cashbalance} TND) pour continuer.</Text>
+          </View>
+        </View>
+      )}
 
       {/* Date Filter - Restricted to Offers */}
       {activeTab === 'OFFRES' && (
@@ -542,7 +579,21 @@ const styles = StyleSheet.create({
   emptySubLabelText: { fontSize: 14, color: '#94a3b8', textAlign: 'center', marginTop: 8, lineHeight: 20 },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 15 },
-  loadingText: { color: '#3b82f6', fontSize: 14, fontWeight: '500' }
+  loadingText: { color: '#3b82f6', fontSize: 14, fontWeight: '500' },
+  blockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    gap: 12
+  },
+  blockedBannerText: { fontSize: 14, fontWeight: 'bold', color: '#991b1b' },
+  blockedBannerSub: { fontSize: 12, color: '#b91c1c', marginTop: 2 },
 });
 
 export default DemandesListScreen;
