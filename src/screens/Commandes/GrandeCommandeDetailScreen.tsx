@@ -9,6 +9,8 @@ import { useHaptics } from '../../hooks/useHaptics';
 import * as Haptics from 'expo-haptics';
 import { translateStatut } from '../../utils/translations';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLivreur } from '../../hooks/useLivreur';
+import { MoyenTransport } from '../../Types/auth';
 
 type RootStackParamList = {
     GrandeCommandeDetail: { grandeCommandeId: number; initialData?: GrandeCommande };
@@ -21,6 +23,7 @@ export default function GrandeCommandeDetailScreen() {
     const navigation = useNavigation<any>();
     const { grandeCommandeId, initialData } = route.params;
     const { impact } = useHaptics();
+    const { profile } = useLivreur();
 
     const [grandeCommande, setGrandeCommande] = useState<GrandeCommande | null>(initialData || null);
     const [loading, setLoading] = useState(!initialData);
@@ -100,8 +103,12 @@ export default function GrandeCommandeDetailScreen() {
                         <Text style={styles.bundleCode}>{grandeCommande.code}</Text>
                         <Text style={styles.bundleSub}>{grandeCommande.commandes?.length || 0} commandes groupées</Text>
                     </View>
-                    <View style={styles.priceBadge}>
-                        <Text style={styles.priceValue}>{grandeCommande.totalPrixLivraison} TND</Text>
+                    <View style={[styles.priceBadge, profile?.moyen === MoyenTransport.MOTO && { backgroundColor: '#fef3c7' }]}>
+                        <Text style={[styles.priceValue, profile?.moyen === MoyenTransport.MOTO && { color: '#d97706' }]}>
+                            {profile?.moyen === MoyenTransport.MOTO
+                                ? `${(grandeCommande.commandes?.length || 0) * 5} TND`
+                                : `${grandeCommande.totalPrixLivraison} TND`}
+                        </Text>
                     </View>
                 </View>
             </LinearGradient>

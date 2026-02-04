@@ -12,6 +12,7 @@ import { LivreurService } from '../../services/LivreurService';
 import { WebSocketService } from '../../services/websocket';
 import { Commande, Statut } from '../../Types/types';
 import { useAuth } from '../../context/AuthContext';
+import { MoyenTransport } from '../../Types/auth';
 import { translateStatut } from '../../utils/translations';
 import { NotificationService } from '../../services/NotificationService';
 import { useLivreur } from '../../hooks/useLivreur';
@@ -651,8 +652,12 @@ export default function LivreurDashboard() {
               </View>
 
               <View style={styles.groupCardFooter}>
-                <View style={styles.priceTag}>
-                  <Text style={styles.priceTagText}>{item.totalPrixLivraison} TND</Text>
+                <View style={[styles.priceTag, profile?.moyen === MoyenTransport.MOTO && { backgroundColor: '#fef3c7' }]}>
+                  <Text style={[styles.priceTagText, profile?.moyen === MoyenTransport.MOTO && { color: '#d97706' }]}>
+                    {profile?.moyen === MoyenTransport.MOTO
+                      ? `${(item.commandes?.length || 0) * 5} TND`
+                      : `${item.totalPrixLivraison} TND`}
+                  </Text>
                 </View>
                 {item.statut === 'PENDING' ? (
                   <TouchableOpacity

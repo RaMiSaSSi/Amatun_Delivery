@@ -7,7 +7,7 @@ import { Commande, Statut, Adresse } from '../../Types/types';
 import { Boutique } from '../../Types/Boutique';
 import { Produit } from '../../Types/Produit';
 import { useAuth } from '../../context/AuthContext';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+
 import * as Location from 'expo-location';
 import { translateStatut, translateType, translatePaiement } from '../../utils/translations';
 import { calculateDistance, calculateDriverRevenue } from '../../utils/revenueCalculator';
@@ -36,7 +36,6 @@ export default function CommandeDetailsScreen() {
     const [driverLocation, setDriverLocation] = useState<Location.LocationObject | null>(null);
     const [distances, setDistances] = useState({ toClient: 0 }); // toBoutique is now dynamic per boutique
     const [driverRevenue, setDriverRevenue] = useState<number>(0);
-    const mapRef = React.useRef<MapView | null>(null);
     const { impact, notification: hapticNotification } = useHaptics();
     const { profile, isBlockedForCmd, getDeliveryFee, refreshProfile } = useLivreur();
     const { accept, updateStatut } = useCommandes('');
@@ -68,14 +67,8 @@ export default function CommandeDetailsScreen() {
     useEffect(() => {
         if (!commande) return;
 
-        // Calculate distance to client (last leg)
-        // Note: For boutiques, we calculate distance individually in render or a separate effect if needed.
-        // But mainly we want to center the map.
-
         let distToClient = 0;
 
-        // Find the last boutique address if possible? 
-        // Logic: if we have boutiquesList, we can check distance from last boutique to client
         if (boutiquesList.length > 0 && commande.adresse?.latitude && commande.adresse?.longitude) {
             const lastBoutique = boutiquesList[boutiquesList.length - 1];
             if (lastBoutique.address?.latitude && lastBoutique.address?.longitude) {
@@ -89,27 +82,6 @@ export default function CommandeDetailsScreen() {
         }
 
         setDistances(prev => ({ ...prev, toClient: distToClient }));
-
-        // Auto-center map to show all relevant points
-        if (mapRef.current) {
-            const coordinates = [];
-            if (driverLocation) coordinates.push({ latitude: driverLocation.coords.latitude, longitude: driverLocation.coords.longitude });
-
-            boutiquesList.forEach(b => {
-                if (b.address?.latitude && b.address?.longitude) {
-                    coordinates.push({ latitude: b.address.latitude, longitude: b.address.longitude });
-                }
-            });
-
-            if (commande.adresse?.latitude && commande.adresse?.longitude) coordinates.push({ latitude: commande.adresse.latitude, longitude: commande.adresse.longitude });
-
-            if (coordinates.length > 0) {
-                mapRef.current.fitToCoordinates(coordinates, {
-                    edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-                    animated: true,
-                });
-            }
-        }
     }, [driverLocation, boutiquesList, commande]);
 
     const loadDetails = async () => {
@@ -266,15 +238,7 @@ export default function CommandeDetailsScreen() {
         }
     };
 
-    const showNavigationInApp = (targetLat: number, targetLng: number, title: string) => {
-        (navigation as any).navigate('MapScreen', {
-            targetLat,
-            targetLng,
-            targetTitle: title,
-            driverLat: driverLocation?.coords.latitude,
-            driverLng: driverLocation?.coords.longitude,
-        });
-    };
+
 
     if (loading) {
         return (
@@ -365,15 +329,10 @@ export default function CommandeDetailsScreen() {
                                                     address.latitude,
                                                     address.longitude
                                                 )}
-                                                style={styles.circleActionBtn}
+                                                style={[styles.circleActionBtn, { width: '100%', borderRadius: 12, backgroundColor: '#eff6ff' }]}
                                             >
-                                                <Ionicons name="location" size={22} color="#3b82f6" />
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                onPress={() => address.latitude && address.longitude && showNavigationInApp(address.latitude, address.longitude, boutique.nom)}
-                                                style={[styles.circleActionBtn, { backgroundColor: '#ecfdf5' }]}
-                                            >
-                                                <Ionicons name="map" size={22} color="#10b981" />
+                                                <Ionicons name="navigate" size={20} color="#3b82f6" />
+                                                <Text style={{ marginLeft: 8, color: '#3b82f6', fontWeight: 'bold' }}>Itinéraire Google Maps</Text>
                                             </TouchableOpacity>
                                         </View>
                                     </View>
@@ -420,15 +379,10 @@ export default function CommandeDetailsScreen() {
                                         commande.adresse?.latitude,
                                         commande.adresse?.longitude
                                     )}
-                                    style={styles.circleActionBtn}
+                                    style={[styles.circleActionBtn, { width: '100%', borderRadius: 12, backgroundColor: '#eff6ff' }]}
                                 >
-                                    <Ionicons name="location" size={22} color="#3b82f6" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => commande.adresse?.latitude && commande.adresse?.longitude && showNavigationInApp(commande.adresse.latitude, commande.adresse.longitude, "Client")}
-                                    style={[styles.circleActionBtn, { backgroundColor: '#ecfdf5' }]}
-                                >
-                                    <Ionicons name="map" size={22} color="#10b981" />
+                                    <Ionicons name="navigate" size={20} color="#3b82f6" />
+                                    <Text style={{ marginLeft: 8, color: '#3b82f6', fontWeight: 'bold' }}>Itinéraire Google Maps</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -659,8 +613,9 @@ const styles = StyleSheet.create({
 
     actionButtons: { flexDirection: 'row', gap: 10, marginLeft: 10 },
     circleActionBtn: {
-        width: 40,
-        height: 40,
+        flex: 1,
+        flexDirection: 'row',
+        height: 44,
         borderRadius: 20,
         backgroundColor: '#eff6ff',
         justifyContent: 'center',

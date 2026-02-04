@@ -10,7 +10,6 @@ import LivreurDashboard from './src/screens/Commandes/LivreurDashboard';
 import HistoryScreen from './src/screens/Commandes/HistoryScreen';
 import CommandeDetailsScreen from './src/screens/Commandes/CommandeDetailsScreen';
 import LoginScreen from './src/screens/LoginScreen';
-import MapScreen from './src/screens/Commandes/MapScreen';
 import { useAuth, AuthProvider } from './src/context/AuthContext';
 import DemandeDetailScreen from './src/screens/Demandes/DemandeDetailScreen';
 import DemandesListScreen from './src/screens/Demandes/DemandeListScreen';
@@ -72,7 +71,7 @@ function AppNavigator() {
           <Stack.Screen name="Dashboard" component={LivreurDashboard} />
           <Stack.Screen name="History" component={HistoryScreen} />
           <Stack.Screen name="CommandeDetails" component={CommandeDetailsScreen} />
-          <Stack.Screen name="MapScreen" component={MapScreen} />
+
           <Stack.Screen name="DemandesList" component={DemandesListScreen} />
           <Stack.Screen name="DemandeDetail" component={DemandeDetailScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />

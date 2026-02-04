@@ -1,6 +1,7 @@
 import { LivreurService } from '../services/LivreurService';
 import { Commande, CommandeProduit, Statut, Type } from '../Types/types';
 import { MoyenTransport } from '../Types/auth';
+import { GrandeCommande } from '../Types/GrandeCommande.model';
 
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Radius of the earth in km
@@ -20,7 +21,12 @@ const deg2rad = (deg: number) => {
     return deg * (Math.PI / 180);
 };
 
-export const calculateDriverRevenue = async (commande: Commande, transportMode?: MoyenTransport): Promise<number> => {
+export const calculateDriverRevenue = async (commande: Commande, transportMode?: MoyenTransport, isPartOfBundle: boolean = false): Promise<number> => {
+    // Rule for Moto: 5 TND per order (always for Grande Commande, and generally as requested)
+    if (transportMode === MoyenTransport.MOTO) {
+        return 5.0;
+    }
+
     try {
         let cmdToProcess = commande;
 
@@ -105,3 +111,26 @@ export const calculateDriverRevenue = async (commande: Commande, transportMode?:
         return 0;
     }
 };
+
+/**
+ * Calculates the total revenue for a GrandeCommande (bundle of orders).
+ * For MOTO: 5 TND per order.
+ * For VOITURE: Uses the existing per-boutique logic across all orders.
+ */
+export const calculateGrandeCommandeRevenue = async (gc: GrandeCommande, transportMode?: MoyenTransport): Promise<number> => {
+    if (!gc.commandes || gc.commandes.length === 0) return 0;
+
+    if (transportMode === MoyenTransport.MOTO) {
+        return gc.commandes.length * 5.0;
+    }
+
+    // For other modes, calculate sum of individual revenues
+    // However, we should pass the fact that they are part of a bundle if we had specific logic.
+    // For now, let's sum them up.
+    let total = 0;
+    for (const cmd of gc.commandes) {
+        total += await calculateDriverRevenue(cmd, transportMode, true);
+    }
+    return total;
+};
+
