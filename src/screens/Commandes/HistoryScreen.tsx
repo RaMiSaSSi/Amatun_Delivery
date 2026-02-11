@@ -6,7 +6,7 @@ import { LivreurService } from '../../services/LivreurService';
 import { DemandeLivraisonService } from '../../services/DemandeLivraisonService';
 import { Commande, Statut, Type } from '../../Types/types';
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
-import { calculateDriverRevenue } from '../../utils/revenueCalculator';
+import { calculateDriverRevenue, calculateDemandeRevenue } from '../../utils/revenueCalculator';
 import { translateStatut, translateStatutDemande } from '../../utils/translations';
 
 import { useAuth } from '../../context/AuthContext';
@@ -42,12 +42,8 @@ export default function HistoryScreen() {
         if (!userId) return;
         setLoading(true);
         try {
-            // Fetch stats
-            const [expCmds, stdCmds, expDmds, stdDmds, livreurInfo] = await Promise.all([
-                LivreurService.countCommandesByType(userId, Type.EXPRESS),
-                LivreurService.countCommandesByType(userId, Type.STANDARD),
-                DemandeLivraisonService.countDemandesByType(Type.EXPRESS),
-                DemandeLivraisonService.countDemandesByType(Type.STANDARD),
+            // Fetch basic info
+            const [livreurInfo] = await Promise.all([
                 LivreurService.getLivreurInfos(userId)
             ]);
 
@@ -74,38 +70,32 @@ export default function HistoryScreen() {
             // Fetch Demandes
             const dmdData: DemandeLivraison[] = await DemandeLivraisonService.getMesLivraisons(userId);
 
-            // Fetch Boutique counts for each command and calculate revenue
+            // Accumulators for stats
             let currentRevenue = 0;
+            let countExpCmd = 0;
+            let countStdCmd = 0;
+            let countExpDmd = 0;
+            let countStdDmd = 0;
+
+            // Fetch Boutique counts for each command and calculate revenue
             const enrichedCmds = await Promise.all((cmdData || []).map(async (c) => {
                 const boutiqueCount = await LivreurService.countBoutiquesInCommande(c.id);
                 let distRevenue = 0;
 
+                // Update Counts
+                if (c.type === Type.EXPRESS) countExpCmd++;
+                else countStdCmd++;
+
                 // Calculate Driver Revenue if Delivered OR Returned
-                // Note: We calculate it even if not delivered to show potential? 
-                // Usually revenue is only counted if delivered.
                 if (c.statut === Statut.DELIVERED || c.statut === Statut.RETURNED) {
                     distRevenue = await calculateDriverRevenue(c, transportMode);
                     currentRevenue += distRevenue;
                 } else if (c.statut === Statut.ACCEPTED || c.statut === Statut.SHIPPED) {
-                    // Start calculating potential revenue anyway to show it? 
-                    // Let's just calculate it for all to display it
                     distRevenue = await calculateDriverRevenue(c, transportMode);
                 }
 
                 return { ...c, boutiqueCount, driverRevenue: distRevenue };
             }));
-
-            // Handle Demande Revenue (if any logic exists, currently 0 or undefined)
-            // Assuming Demandes don't track distance-based revenue effectively yet 
-            // or use a different logic. Leaving as 0 for now as per scope.
-
-            setStats({
-                expressCmds: expCmds,
-                standardCmds: stdCmds,
-                expressDmds: expDmds,
-                standardDmds: stdDmds,
-                totalRevenue: currentRevenue
-            });
 
             // Normalize and Combine
             const normalizedCmds: HistoryItem[] = enrichedCmds.map(c => ({
@@ -131,16 +121,38 @@ export default function HistoryScreen() {
                     }
                     return true;
                 })
-                .map(d => ({
-                    id: d.id,
-                    type: 'DEMANDE',
-                    date: d.createdAt,
-                    statut: d.statut,
-                    clientNom: `${d.nomDestinataire} ${d.prenomDestinataire}`,
-                    adresse: `${d.adresseCourteDestinataire}, ${d.villeDestinataire}`,
-                    prix: 0,
-                    original: d
-                }));
+                .map(d => {
+                    const distRevenue = calculateDemandeRevenue(d, transportMode);
+
+                    // Update Counts
+                    if (d.type === Type.EXPRESS) countExpDmd++;
+                    else countStdDmd++;
+
+                    // Add to total revenue if delivered or returned
+                    if (d.statut === StatutDemande.LIVREE || d.statut === StatutDemande.RETOUR) {
+                        currentRevenue += distRevenue;
+                    }
+
+                    return {
+                        id: d.id,
+                        type: 'DEMANDE',
+                        date: d.createdAt,
+                        statut: d.statut,
+                        clientNom: `${d.nomDestinataire} ${d.prenomDestinataire}`,
+                        adresse: `${d.adresseCourteDestinataire}, ${d.villeDestinataire}`,
+                        prix: 0,
+                        driverRevenue: distRevenue,
+                        original: d
+                    };
+                });
+
+            setStats({
+                expressCmds: countExpCmd,
+                standardCmds: countStdCmd,
+                expressDmds: countExpDmd,
+                standardDmds: countStdDmd,
+                totalRevenue: currentRevenue
+            });
 
             const combined = [...normalizedCmds, ...normalizedDmds].sort((a, b) =>
                 new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -221,7 +233,7 @@ export default function HistoryScreen() {
                         <Text style={styles.price}>{item.prix && item.prix > 0 ? `${item.prix} TND` : '---'}</Text>
 
                         {/* Driver Revenue Display */}
-                        {item.type === 'COMMANDE' && item.driverRevenue !== undefined && (
+                        {item.driverRevenue !== undefined && (
                             <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#f59e0b' }}>
                                 Gain: {item.driverRevenue.toFixed(2)} TND
                             </Text>

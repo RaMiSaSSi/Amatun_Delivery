@@ -5,8 +5,12 @@ import { TextEncoder, TextDecoder } from 'text-encoding';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
+import { API_BASE_URL } from '../config/api';
+
+import { StorageService } from './storage';
+
 // Utilisation du tunnel Dev pour les WebSockets (wss:// au lieu de ws://)
-const WS_URL = 'wss://lpvq76hs-8085.uks1.devtunnels.ms/ws/websocket';
+const WS_URL = API_BASE_URL.replace('https', 'wss') + '/ws/websocket';
 
 export class WebSocketService {
   private client: Client;
@@ -68,7 +72,13 @@ export class WebSocketService {
     });
   }
 
-  activate() {
+  async activate() {
+    const token = await StorageService.getItem('jwt');
+    if (token) {
+      this.client.connectHeaders = {
+        'Authorization': `Bearer ${token}`
+      };
+    }
     this.client.activate();
   }
 

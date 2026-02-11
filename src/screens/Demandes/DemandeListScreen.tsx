@@ -13,6 +13,7 @@ import { translateStatutDemande } from '../../utils/translations';
 import { NotificationService } from '../../services/NotificationService';
 import { useLivreur } from '../../hooks/useLivreur';
 import { useHaptics } from '../../hooks/useHaptics';
+import { calculateDemandeRevenue } from '../../utils/revenueCalculator';
 import * as Haptics from 'expo-haptics';
 
 const DemandesListScreen = () => {
@@ -248,6 +249,11 @@ const DemandesListScreen = () => {
         <View style={styles.infoRow}>
           <Ionicons name="pricetag-outline" size={16} color="#6b7280" />
           <Text style={styles.infoText}>{item.typeArticle || 'Colis standard'}</Text>
+        </View>
+
+        <View style={styles.revenueBadge}>
+          <Text style={styles.revenueLabel}>Gain Livreur</Text>
+          <Text style={styles.revenueValue}>{calculateDemandeRevenue(item, profile?.moyen)} TND</Text>
         </View>
 
         {activeTab === 'OFFRES' && (
@@ -545,6 +551,19 @@ const styles = StyleSheet.create({
   cardBody: { gap: 10 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   infoText: { color: '#475569', fontSize: 14, fontWeight: '500' },
+
+  revenueBadge: {
+    backgroundColor: '#fff7ed',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginTop: 5,
+    borderWidth: 1,
+    borderColor: '#ffedd5'
+  },
+  revenueLabel: { fontSize: 9, color: '#9a3412', fontWeight: 'bold', textTransform: 'uppercase' },
+  revenueValue: { fontSize: 15, fontWeight: 'bold', color: '#ea580c' },
 
   actionRowCard: {
     flexDirection: 'row',

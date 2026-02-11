@@ -3,8 +3,10 @@ import axios from 'axios';
 import { StorageService } from './storage';
 import { Type } from '../Types/types';
 
+import { API_BASE_URL } from '../config/api';
+
 // IMPORTANT : Mettez l'IP de votre machine, pas localhost pour le mobile
-export const BASE_URL = 'https://lpvq76hs-8085.uks1.devtunnels.ms';
+export const BASE_URL = API_BASE_URL;
 
 const api = axios.create({
   baseURL: BASE_URL,

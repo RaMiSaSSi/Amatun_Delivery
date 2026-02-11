@@ -8,7 +8,7 @@ import { View, ActivityIndicator } from 'react-native';
 import HomeScreen from './src/screens/HomeScreen';
 import LivreurDashboard from './src/screens/Commandes/LivreurDashboard';
 import HistoryScreen from './src/screens/Commandes/HistoryScreen';
-import CommandeDetailsScreen from './src/screens/Commandes/CommandeDetailsScreen';
+import CommandeDetailsScreen from './src/screens/Commandes/CommandeDetaiilsScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import { useAuth, AuthProvider } from './src/context/AuthContext';
 import DemandeDetailScreen from './src/screens/Demandes/DemandeDetailScreen';

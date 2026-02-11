@@ -2,6 +2,7 @@ import { LivreurService } from '../services/LivreurService';
 import { Commande, CommandeProduit, Statut, Type } from '../Types/types';
 import { MoyenTransport } from '../Types/auth';
 import { GrandeCommande } from '../Types/GrandeCommande.model';
+import { DemandeLivraison } from '../Types/DemandeLivraison';
 
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Radius of the earth in km
@@ -21,49 +22,70 @@ const deg2rad = (deg: number) => {
     return deg * (Math.PI / 180);
 };
 
-export const calculateDriverRevenue = async (commande: Commande, transportMode?: MoyenTransport, isPartOfBundle: boolean = false): Promise<number> => {
-    // Rule for Moto: 5 TND per order (always for Grande Commande, and generally as requested)
-    if (transportMode === MoyenTransport.MOTO) {
-        return 5.0;
-    }
-
+export const calculateDriverRevenue = async (commande: Commande, transportMode?: MoyenTransport, isPartOfBundle: boolean = false, knownBoutiqueCount?: number): Promise<number> => {
     try {
-        let cmdToProcess = commande;
+        let nbBoutique = knownBoutiqueCount;
 
-        // 0. If products are missing, fetch full details
+        // If not provided, we need to calculate/fetch it
+        if (nbBoutique === undefined) {
+            // Try to get it from products if they are fully loaded with boutiqueId (not just CommandeProduit)
+            // But CommandeProduit only has produitId. We need to fetch details or count.
+            // Efficient way: use the API endpoint for counting boutiques if possible
+            if (commande.id) {
+                try {
+                    nbBoutique = await LivreurService.countBoutiquesInCommande(commande.id);
+                } catch (e) {
+                    console.warn(`Failed to count boutiques for cmd ${commande.id}`, e);
+                    // Fallback to 1 if failure, or 0
+                    nbBoutique = 1;
+                }
+            } else {
+                nbBoutique = 1;
+            }
+        }
+
+        // Ensure nbBoutique is at least 1 to avoid 0 revenue for valid orders
+        nbBoutique = nbBoutique && nbBoutique > 0 ? nbBoutique : 1;
+
+        // --- NEW LOGIC (MOTO & VOITURE) ---
+        if (transportMode === MoyenTransport.MOTO) {
+            if (commande.type === Type.EXPRESS) {
+                return 6.0 * nbBoutique;
+            } else {
+                // STANDARD
+                return 4.0 * nbBoutique;
+            }
+        } else if (transportMode === MoyenTransport.VOITURE) {
+            if (commande.type === Type.EXPRESS) {
+                return 7.0 * nbBoutique;
+            } else {
+                // STANDARD
+                return 5.0 * nbBoutique;
+            }
+        }
+
+        // --- FALLBACK FOR OTHER MODES (VELO, CAMION, etc.) ---
+        // Keep distance-based or rely on a default. 
+        // Let's use the distance logic as fallback to be safe, but we need to fetch addresses.
+
+        let cmdToProcess = commande;
         if (!cmdToProcess.produits || cmdToProcess.produits.length === 0) {
             try {
                 cmdToProcess = await LivreurService.getCommandeDetails(commande.id);
             } catch (e) {
-                console.warn(`Could not fetch details for cmd ${commande.id}`, e);
                 return 0;
             }
         }
 
-        // 1. Get all products to find associated boutiques
         if (!cmdToProcess.produits || cmdToProcess.produits.length === 0) return 0;
 
         // Fetch full product details to get boutiqueIds
         const productPromises = cmdToProcess.produits.map(p => LivreurService.getProduitById(p.produitId));
         const products = await Promise.all(productPromises);
-
         const boutiqueIds = [...new Set(products.map(p => p.boutiqueId))];
-
-        // Special Revenue Rule for Returned Orders: 1 TND per boutique
-        if (commande.statut === Statut.RETURNED) {
-            return boutiqueIds.length * 1.0;
-        }
 
         if (boutiqueIds.length === 0) return 0;
 
-        // --- NEW LOGIC FOR CAR ---
-        if (transportMode === MoyenTransport.VOITURE) {
-            const pricePerBoutique = commande.type === Type.EXPRESS ? 4.0 : 3.2;
-            return boutiqueIds.length * pricePerBoutique;
-        }
-
-        // --- DEFAULT LOGIC (MOTO, etc.) ---
-        // 2. Fetch all boutiques and their addresses
         const boutiquePromises = boutiqueIds.map(id => LivreurService.getBoutiqueById(id));
         const boutiques = await Promise.all(boutiquePromises);
 
@@ -72,24 +94,17 @@ export const calculateDriverRevenue = async (commande: Commande, transportMode?:
             return Promise.resolve(null);
         });
         const addresses = await Promise.all(addressPromises);
-
-        // Filter out any null addresses
         const validAddresses = addresses.filter(a => a != null && a.latitude && a.longitude);
 
         if (validAddresses.length === 0) return 0;
 
-        // 3. Calculate Distance
         let totalDistance = 0;
-
-        // Distance between boutiques
         for (let i = 0; i < validAddresses.length - 1; i++) {
             totalDistance += calculateDistance(
                 validAddresses[i].latitude!, validAddresses[i].longitude!,
                 validAddresses[i + 1].latitude!, validAddresses[i + 1].longitude!
             );
         }
-
-        // Distance from last boutique to client
         const lastBoutiqueAddr = validAddresses[validAddresses.length - 1];
         if (commande.adresse && commande.adresse.latitude && commande.adresse.longitude) {
             totalDistance += calculateDistance(
@@ -98,12 +113,9 @@ export const calculateDriverRevenue = async (commande: Commande, transportMode?:
             );
         }
 
-        // 4. Calculate Revenue based on tiered distance
         if (totalDistance <= 3) return 3.0;
         if (totalDistance <= 6) return 3.5;
         if (totalDistance <= 10) return 5.0;
-
-        // Beyond 10km: 5.0 TND base + 0.5 TND per extra km
         return 5.0 + (totalDistance - 10) * 0.5;
 
     } catch (error) {
@@ -120,17 +132,35 @@ export const calculateDriverRevenue = async (commande: Commande, transportMode?:
 export const calculateGrandeCommandeRevenue = async (gc: GrandeCommande, transportMode?: MoyenTransport): Promise<number> => {
     if (!gc.commandes || gc.commandes.length === 0) return 0;
 
-    if (transportMode === MoyenTransport.MOTO) {
-        return gc.commandes.length * 5.0;
-    }
-
-    // For other modes, calculate sum of individual revenues
-    // However, we should pass the fact that they are part of a bundle if we had specific logic.
-    // For now, let's sum them up.
+    // For all modes, calculate sum of individual revenues
+    // We pass the fact that they are part of a bundle if we had specific logic.
+    // For now, let's sum them up which will use the new per-command logic (Moto 4/6, Car 5/7)
     let total = 0;
     for (const cmd of gc.commandes) {
+        // We can optimize if gc.commandes already has product info or boutique counts? 
+        // Usually GC listing might not have full details. calculateDriverRevenue will fetch if needed.
         total += await calculateDriverRevenue(cmd, transportMode, true);
     }
     return total;
+};
+
+/**
+ * Calculates revenue for a DemandeLivraison (Personal delivery request).
+ * Rates:
+ * Moto: Standard 4 TND, Express 6 TND
+ * Voiture: Standard 5 TND, Express 7 TND
+ */
+export const calculateDemandeRevenue = (demande: DemandeLivraison, transportMode?: MoyenTransport): number => {
+    // Assuming demande.type Article or similar, but the user mentioned EXPRESS/STANDARD
+    const isExpress = demande.type === Type.EXPRESS;
+
+    if (transportMode === MoyenTransport.MOTO) {
+        return isExpress ? 6.0 : 4.0;
+    } else if (transportMode === MoyenTransport.VOITURE) {
+        return isExpress ? 7.0 : 5.0;
+    }
+
+    // Fallback
+    return isExpress ? 4.0 : 3.0;
 };
 

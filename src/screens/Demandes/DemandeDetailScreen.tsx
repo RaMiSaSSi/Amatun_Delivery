@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { translateStatutDemande, translatePaiement } from '../../utils/translations';
 import { useLivreur } from '../../hooks/useLivreur';
 import { useHaptics } from '../../hooks/useHaptics';
+import { calculateDemandeRevenue } from '../../utils/revenueCalculator';
 import * as Haptics from 'expo-haptics';
 
 const DemandeDetailScreen = () => {
@@ -166,7 +167,7 @@ const DemandeDetailScreen = () => {
               <View style={styles.stepLine} />
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTag}>DÉPART (RAMASSAGE)</Text>
+              <Text style={[styles.stepTag, { color: '#3b82f6' }]}>DÉPART (RAMASSAGE)</Text>
               <Text style={styles.personName}>{demande.prenom} {demande.nom}</Text>
               <Text style={styles.addressLine}>{demande.adresseCourte}, {demande.quartier}</Text>
               <Text style={styles.cityLine}>{demande.ville}</Text>
@@ -174,11 +175,11 @@ const DemandeDetailScreen = () => {
               <View style={styles.miniActions}>
                 <TouchableOpacity style={styles.miniBtn} onPress={() => Linking.openURL(`tel:${demande.telephone}`)}>
                   <Ionicons name="call" size={14} color="#3b82f6" />
-                  <Text style={styles.miniBtnText}>Appeler</Text>
+                  <Text style={[styles.miniBtnText, { color: '#3b82f6' }]}>Appeler</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.miniBtn} onPress={() => openMap(`${demande.adresseCourte}, ${demande.ville}`)}>
                   <Ionicons name="location" size={14} color="#3b82f6" />
-                  <Text style={styles.miniBtnText}>Itinéraire</Text>
+                  <Text style={[styles.miniBtnText, { color: '#3b82f6' }]}>Itinéraire</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -236,6 +237,14 @@ const DemandeDetailScreen = () => {
             </View>
             <Text style={styles.infoLabel}>Paiement</Text>
             <Text style={styles.infoValue}>{translatePaiement(demande.methodePaiement || 'CASH')}</Text>
+          </View>
+
+          <View style={[styles.infoBox, { backgroundColor: '#fff7ed', borderColor: '#ffedd5' }]}>
+            <View style={[styles.infoIconWrapper, { backgroundColor: '#ffffff' }]}>
+              <Ionicons name="cash-outline" size={20} color="#ea580c" />
+            </View>
+            <Text style={[styles.infoLabel, { color: '#9a3412' }]}>Gain Livreur</Text>
+            <Text style={[styles.infoValue, { color: '#ea580c' }]}>{calculateDemandeRevenue(demande, profile?.moyen)} TND</Text>
           </View>
         </View>
 
@@ -323,7 +332,7 @@ const getStatusColor = (status: StatutDemande) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
     backgroundColor: '#ffffff',
     paddingHorizontal: 20,
@@ -331,33 +340,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
+    borderBottomColor: '#f1f5f9',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10
   },
   backBtnWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#f8fafc',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15
   },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
-  headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500' },
+  headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '600', marginTop: 1 },
 
-  scrollContent: { padding: 20 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { padding: 16, paddingBottom: 50 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
 
-  statusSection: { alignItems: 'center', marginBottom: 25 },
+  statusSection: { alignItems: 'center', marginBottom: 25, marginTop: 5 },
   statusBadgeLarge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)'
   },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  statusBadgeText: { fontSize: 14, fontWeight: 'bold' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
+  statusBadgeText: { fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   creationDate: { fontSize: 12, color: '#94a3b8', marginTop: 10, fontWeight: '500' },
 
   itineraryCard: {
@@ -370,99 +386,104 @@ const styles = StyleSheet.create({
     shadowColor: '#64748b',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowRadius: 12,
     marginBottom: 20
   },
   cardMainTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 20 },
 
   stepContainer: { flexDirection: 'row' },
   stepIndicator: { alignItems: 'center', width: 40, marginRight: 15 },
-  stepIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', zIndex: 2, overflow: 'hidden' },
-  detailIconImg: { width: 20, height: 20, resizeMode: 'contain' },
+  stepIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', zIndex: 2 },
   stepLine: { flex: 1, width: 2, backgroundColor: '#f1f5f9', marginVertical: 4 },
   stepContent: { flex: 1, paddingBottom: 25 },
-  stepTag: { fontSize: 10, color: '#3b82f6', fontWeight: '800', marginBottom: 6 },
+  stepTag: { fontSize: 10, fontWeight: '900', marginBottom: 6, letterSpacing: 0.5 },
   personName: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
-  addressLine: { fontSize: 14, color: '#475569', marginTop: 3 },
-  cityLine: { fontSize: 14, color: '#94a3b8', marginTop: 1 },
+  addressLine: { fontSize: 14, color: '#475569', marginTop: 4, lineHeight: 20 },
+  cityLine: { fontSize: 14, color: '#94a3b8', marginTop: 2, fontWeight: '500' },
 
-  miniActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  miniActions: { flexDirection: 'row', gap: 10, marginTop: 15 },
   miniBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#f1f5f9'
   },
-  miniBtnText: { fontSize: 12, fontWeight: '700', color: '#3b82f6' },
+  miniBtnText: { fontSize: 12, fontWeight: '800' },
 
-  infoGrid: { flexDirection: 'row', gap: 12, marginBottom: 25 },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 25 },
   infoBox: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
+    width: '48%',
+    backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 15,
+    padding: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#f1f5f9'
+    borderColor: '#f1f5f9',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5
   },
   infoIconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8
+    marginBottom: 10
   },
-  infoLabel: { fontSize: 11, color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 4 },
-  infoValue: { fontSize: 13, fontWeight: 'bold', color: '#1e293b', textAlign: 'center' },
-  infoSubValue: { fontSize: 10, color: '#3b82f6', fontWeight: 'bold', marginTop: 2 },
+  infoLabel: { fontSize: 10, color: '#94a3b8', fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  infoValue: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', textAlign: 'center' },
+  infoSubValue: { fontSize: 10, color: '#3b82f6', fontWeight: '900', marginTop: 4 },
 
-  bottomSection: { marginTop: 10 },
+  bottomSection: { marginTop: 10, paddingBottom: 20 },
   dualBtnRow: { flexDirection: 'row', gap: 12 },
   btnSecondary: {
     flex: 1,
-    height: 56,
-    borderRadius: 16,
+    height: 60,
+    borderRadius: 18,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    elevation: 1
   },
-  btnSecondaryText: { color: '#64748b', fontWeight: 'bold', fontSize: 14 },
+  btnSecondaryText: { color: '#64748b', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
   btnPrimary: {
     flex: 2,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#1e293b',
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: '#1e293b', // Matches the Dark Premium look
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    elevation: 4,
+    elevation: 6,
     shadowColor: '#1e293b',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 5
+    shadowRadius: 8
   },
-  btnPrimaryText: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  btnPrimaryText: { color: '#ffffff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
 
   btnOutlineRed: {
-    height: 52,
-    borderRadius: 16,
+    height: 56,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#fee2e2',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#fff1f2'
   },
-  btnOutlineRedText: { color: '#ef4444', fontWeight: 'bold', fontSize: 14 },
+  btnOutlineRedText: { color: '#ef4444', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
 
   successPanel: {
     backgroundColor: '#f0fdf4',
@@ -470,31 +491,38 @@ const styles = StyleSheet.create({
     padding: 30,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#dcfce7'
+    borderColor: '#dcfce7',
+    elevation: 2
   },
   successCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#10b981',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
-    elevation: 3
+    elevation: 4,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10
   },
-  successTitle: { fontSize: 20, fontWeight: 'bold', color: '#166534' },
-  successSub: { fontSize: 14, color: '#15803d', marginTop: 5 },
+  successTitle: { fontSize: 20, fontWeight: '900', color: '#166534' },
+  successSub: { fontSize: 14, color: '#15803d', marginTop: 5, fontWeight: '500' },
+
   warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     backgroundColor: '#fffbeb',
-    padding: 12,
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#fef3c7'
+    borderColor: '#fef3c7',
+    marginBottom: 15
   },
-  warningMsg: { fontSize: 13, color: '#b45309', fontWeight: '600' },
+  warningMsg: { fontSize: 13, color: '#b45309', fontWeight: '700', flex: 1 },
 });
 
 export default DemandeDetailScreen;

@@ -1,25 +1,23 @@
-import { Platform } from 'react-native';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { DemandeLivraison, StatutDemande } from '../Types/DemandeLivraison';
 import { Type } from '../Types/types';
 
-const API_BASE = 'https://lpvq76hs-8085.uks1.devtunnels.ms/api/demandes'; // à adapter
+import { API_BASE_URL } from '../config/api';
+import { StorageService } from './storage';
+// Import the configured axios instance that handles tokens
+import api from './LivreurService';
+
+const BASE_PATH = '/api/demandes';
 
 export class DemandeLivraisonService {
   static async getDemandesAcceptees(livreurId?: number): Promise<DemandeLivraison[]> {
     console.log(`[FRONT] Appel API: getDemandesAcceptees(livreurId=${livreurId})`);
     try {
-      const url = livreurId ? `${API_BASE}/acceptees?livreurId=${livreurId}` : `${API_BASE}/acceptees`;
-      const res = await fetch(url);
-      console.log(`[FRONT] Réponse getDemandesAcceptees: status=${res.status}`);
-      if (!res.ok) {
-        console.error('[FRONT] Erreur getDemandesAcceptees - Response not OK');
-        throw new Error('Erreur récupération demandes');
-      }
-      const data = await res.json();
-      console.log(`[FRONT] getDemandesAcceptees succès: ${Array.isArray(data) ? data.length : 0} items`);
-      return data;
+      const url = livreurId ? `${BASE_PATH}/acceptees?livreurId=${livreurId}` : `${BASE_PATH}/acceptees`;
+      const response = await api.get(url);
+      console.log(`[FRONT] getDemandesAcceptees succès: ${Array.isArray(response.data) ? response.data.length : 0} items`);
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception getDemandesAcceptees:', error);
       throw error;
@@ -29,17 +27,9 @@ export class DemandeLivraisonService {
   static async accepterDemande(id: number, livreurId: number): Promise<DemandeLivraison> {
     console.log(`[FRONT] Appel API: accepterDemande(id=${id}, livreurId=${livreurId})`);
     try {
-      const res = await fetch(`${API_BASE}/${id}/accepter?livreurId=${livreurId}`, {
-        method: 'POST'
-      });
-      console.log(`[FRONT] Réponse accepterDemande: status=${res.status}`);
-      if (!res.ok) {
-        console.error('[FRONT] Erreur accepterDemande - Response not OK');
-        throw new Error('Erreur acceptation demande');
-      }
-      const data = await res.json();
+      const response = await api.post(`${BASE_PATH}/${id}/accepter?livreurId=${livreurId}`);
       console.log('[FRONT] accepterDemande succès');
-      return data;
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception accepterDemande:', error);
       throw error;
@@ -49,15 +39,9 @@ export class DemandeLivraisonService {
   static async getDemandeById(id: number): Promise<DemandeLivraison> {
     console.log(`[FRONT] Appel API: getDemandeById(id=${id})`);
     try {
-      const res = await fetch(`${API_BASE}/${id}`);
-      console.log(`[FRONT] Réponse getDemandeById: status=${res.status}`);
-      if (!res.ok) {
-        console.error('[FRONT] Erreur getDemandeById - Response not OK');
-        throw new Error('Demande non trouvée');
-      }
-      const data = await res.json();
+      const response = await api.get(`${BASE_PATH}/${id}`);
       console.log('[FRONT] getDemandeById succès');
-      return data;
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception getDemandeById:', error);
       throw error;
@@ -68,17 +52,9 @@ export class DemandeLivraisonService {
   static async updateStatut(id: number, statut: StatutDemande): Promise<DemandeLivraison> {
     console.log(`[FRONT] Appel API: updateStatut(id=${id}, statut=${statut})`);
     try {
-      const res = await fetch(`${API_BASE}/${id}/statut?statut=${statut}`, {
-        method: 'PUT'
-      });
-      console.log(`[FRONT] Réponse updateStatut: status=${res.status}`);
-      if (!res.ok) {
-        console.error('[FRONT] Erreur updateStatut - Response not OK');
-        throw new Error('Erreur mise à jour statut');
-      }
-      const data = await res.json();
+      const response = await api.put(`${BASE_PATH}/${id}/statut?statut=${statut}`);
       console.log('[FRONT] updateStatut succès');
-      return data;
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception updateStatut:', error);
       throw error;
@@ -89,15 +65,9 @@ export class DemandeLivraisonService {
   static async getMesLivraisons(livreurId: number): Promise<DemandeLivraison[]> {
     console.log(`[FRONT] Appel API: getMesLivraisons(livreurId=${livreurId})`);
     try {
-      const res = await fetch(`${API_BASE}/mes-livraisons/${livreurId}`);
-      console.log(`[FRONT] Réponse getMesLivraisons: status=${res.status}`);
-      if (!res.ok) {
-        console.error('[FRONT] Erreur getMesLivraisons - Response not OK');
-        throw new Error('Erreur récupération livraisons');
-      }
-      const data = await res.json();
-      console.log(`[FRONT] getMesLivraisons succès: ${Array.isArray(data) ? data.length : 0} items`);
-      return data;
+      const response = await api.get(`${BASE_PATH}/mes-livraisons/${livreurId}`);
+      console.log(`[FRONT] getMesLivraisons succès: ${Array.isArray(response.data) ? response.data.length : 0} items`);
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception getMesLivraisons:', error);
       throw error;
@@ -107,15 +77,15 @@ export class DemandeLivraisonService {
   static async countDemandesByType(type: Type): Promise<number> {
     console.log(`[FRONT] Appel API: countDemandesByType(type=${type})`);
     try {
-      const res = await fetch(`${API_BASE}/count-by-type?type=${type}`);
-      if (!res.ok) throw new Error('Erreur comptage demandes');
-      return await res.json();
+      const response = await api.get(`${BASE_PATH}/count-by-type?type=${type}`);
+      return response.data;
     } catch (error) {
       console.error('[FRONT] Exception countDemandesByType:', error);
       throw error;
     }
   }
 }
+
 
 // WebSocket pour temps réel
 export class DemandeWebSocketService {
@@ -133,7 +103,7 @@ export class DemandeWebSocketService {
 
     this.client = new Client({
       webSocketFactory: () =>
-        new SockJS('https://lpvq76hs-8085.uks1.devtunnels.ms/ws'), // à adapter
+        new SockJS(`${API_BASE_URL}/ws`),
       reconnectDelay: 5000,
     });
 
@@ -156,7 +126,13 @@ export class DemandeWebSocketService {
     };
   }
 
-  activate() {
+  async activate() {
+    const token = await StorageService.getItem('jwt');
+    if (token) {
+      this.client.connectHeaders = {
+        'Authorization': `Bearer ${token}`
+      };
+    }
     this.client.activate();
   }
 

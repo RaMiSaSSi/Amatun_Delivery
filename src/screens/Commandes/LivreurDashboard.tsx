@@ -13,7 +13,7 @@ import { WebSocketService } from '../../services/websocket';
 import { Commande, Statut } from '../../Types/types';
 import { useAuth } from '../../context/AuthContext';
 import { MoyenTransport } from '../../Types/auth';
-import { translateStatut } from '../../utils/translations';
+import { translateStatut, translateStatutDemande } from '../../utils/translations';
 import { NotificationService } from '../../services/NotificationService';
 import { useLivreur } from '../../hooks/useLivreur';
 import { useCommandes } from '../../hooks/useCommandes';
@@ -22,6 +22,10 @@ import { useHaptics } from '../../hooks/useHaptics';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { GrandeCommande } from '../../Types/GrandeCommande.model';
+import { useDemandes } from '../../hooks/useDemandes';
+import { calculateDemandeRevenue } from '../../utils/revenueCalculator';
+import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
+
 
 
 export default function LivreurDashboard() {
@@ -51,17 +55,28 @@ export default function LivreurDashboard() {
     isAccepting: isAcceptingGroup
   } = useGrandeCommande();
 
+  const {
+    demandes: remoteDemandes,
+    isLoading: isLoadingDemandes,
+    isRefetching: isRefetchingDemandes,
+    refetch: refetchDemandes,
+    accept: acceptDemande,
+    updateStatut: updateStatutDemande
+  } = useDemandes();
+
   const [activeTab, setActiveTab] = useState<'SINGLE' | 'GROUPS'>('SINGLE');
 
-  // Local state for real-time responsiveness if needed, but we can rely on React Query
-  // For now, let's keep a local list that merges server data + WS updates
+  // Local state for real-time responsiveness
   const [commandes, setCommandes] = useState<Commande[]>([]);
+  const [demandes, setDemandes] = useState<DemandeLivraison[]>([]);
 
   useEffect(() => {
-    if (remoteCommandes) {
-      setCommandes(remoteCommandes);
-    }
+    if (remoteCommandes) setCommandes(remoteCommandes);
   }, [remoteCommandes]);
+
+  useEffect(() => {
+    if (remoteDemandes) setDemandes(remoteDemandes);
+  }, [remoteDemandes]);
 
   const player = useAudioPlayer(require('../../../assets/Notification.mp3'));
 
@@ -184,6 +199,19 @@ export default function LivreurDashboard() {
         );
 
         refetchGroups();
+      } else if (msg.type === 'NEW_DEMANDE') {
+        const newDmd = msg.data;
+        console.log('🚲 Nouvelle Demande reçue via WS:', newDmd.id);
+        setDemandes(prev => {
+          if (prev.some(d => d.id === newDmd.id)) return prev;
+          playNotificationSound();
+          NotificationService.presentLocalNotification(
+            "🚲 Nouvelle Demande !",
+            `Une demande de livraison de ${newDmd.nom} est disponible.`
+          );
+          Alert.alert("Nouvelle Demande", `Demande de livraison #${newDmd.id} disponible !`);
+          return [newDmd, ...prev].sort((a, b) => b.id - a.id);
+        });
       }
     }, userId);
 
@@ -218,12 +246,59 @@ export default function LivreurDashboard() {
     }
   };
 
+  const handleAcceptDemande = async (dmd: DemandeLivraison) => {
+    if (!userId) return;
 
+    if (isBlockedForSingle({ ...dmd, uiType: 'DEMANDE' })) {
+      hapticNotification(Haptics.NotificationFeedbackType.Warning);
+      const fee = calculateDemandeRevenue(dmd, profile?.moyen);
+      Alert.alert(
+        "Plafond atteint",
+        `En acceptant cette demande (+${fee} TND de frais), vous dépasserez votre plafond de cash autorisé. Veuillez verser l'argent encaissé pour continuer.`,
+        [{ text: "Compris" }]
+      );
+      return;
+    }
+
+    try {
+      impact(Haptics.ImpactFeedbackStyle.Heavy);
+      await acceptDemande(dmd.id);
+      Alert.alert('Succès', 'Demande de livraison acceptée !');
+      navigation.navigate('DemandeDetail', { demandeId: dmd.id });
+    } catch (error) {
+      Alert.alert('Erreur', 'Impossible d\'accepter la demande');
+    }
+  };
+
+  const handleStatutChangeDemande = async (dmd: DemandeLivraison, newStatut: StatutDemande) => {
+    impact(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await updateStatutDemande({ demandeId: dmd.id, statut: newStatut });
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Erreur', 'Mise à jour échouée');
+    }
+  };
+
+
+
+  const isBlockedForSingle = (item: any) => {
+    if (!profile) return false;
+    let fee = 0;
+    if (item.uiType === 'COMMANDE') {
+      fee = getDeliveryFee(item);
+    } else {
+      fee = calculateDemandeRevenue(item, profile.moyen);
+    }
+    const balance = profile.cashbalance || 0;
+    const limit = (profile.plafond || 0) + 10;
+    return balance + fee >= limit;
+  };
 
   const handleAccept = async (cmd: Commande) => {
     if (!userId) return;
 
-    if (isBlockedForCmd(cmd)) {
+    if (isBlockedForSingle({ ...cmd, uiType: 'COMMANDE' })) {
       hapticNotification(Haptics.NotificationFeedbackType.Warning);
       const fee = getDeliveryFee(cmd);
       Alert.alert(
@@ -373,16 +448,36 @@ export default function LivreurDashboard() {
   };
 
   // Filtrage pour ne montrer que:
-  // 1. Les commandes CONFIRMED (disponibles pour tous)
-  // 2. Les commandes qui ME sont assignées (ACCEPTED, SHIPPED, DELIVERED...)
-  const displayedCommandes = useMemo(() => {
-    return commandes.filter(c => {
-      if (ignoredOrderIds.includes(c.id)) return false; // Masquer si ignorée
-      if (c.statut === Statut.CONFIRMED) return true; // Visible par tout le monde
-      if (c.livreurId === userId) return true; // Mes commandes
-      return false; // Les commandes des autres sont masquées
-    }).sort((a, b) => b.id - a.id); // Plus récent en haut
-  }, [commandes, userId, ignoredOrderIds]);
+  // 1. Les commandes/demandes CONFIRMED (disponibles pour tous)
+  // 2. Celles qui ME sont assignées (ACCEPTED, SHIPPED, DELIVERED...)
+  const mergedItems = useMemo(() => {
+    const combined: any[] = [
+      ...commandes.map(c => ({ ...c, uiType: 'COMMANDE' as const })),
+      ...demandes.map(d => ({ ...d, uiType: 'DEMANDE' as const }))
+    ];
+
+    return combined.filter(item => {
+      if (ignoredOrderIds.includes(item.id)) return false;
+
+      const isCommande = item.uiType === 'COMMANDE';
+      const status = item.statut;
+      const livreurId = item.livreurId;
+
+      if (isCommande) {
+        if (status === Statut.CONFIRMED) return true;
+        if (livreurId === userId) return true;
+      } else {
+        // DEMANDE
+        if (status === StatutDemande.CONFIRMEE) return true;
+        if (livreurId === userId) return true;
+      }
+      return false;
+    }).sort((a, b) => {
+      const dateA = new Date(a.date || a.createdAt).getTime();
+      const dateB = new Date(b.date || b.createdAt).getTime();
+      return dateB - dateA;
+    });
+  }, [commandes, demandes, userId, ignoredOrderIds]);
 
   const dates = useMemo(() => {
     const list = [];
@@ -411,7 +506,7 @@ export default function LivreurDashboard() {
           <View>
             <Text style={styles.headerTitleText}>Tableau de Bord</Text>
             <Text style={styles.headerSubtitleText}>
-              {activeTab === 'SINGLE' ? `${displayedCommandes.length} livraisons` : `${grandesCommandes.length} groupes`}
+              {activeTab === 'SINGLE' ? `${mergedItems.length} livraisons` : `${grandesCommandes.length} groupes`}
             </Text>
           </View>
         </View>
@@ -506,31 +601,55 @@ export default function LivreurDashboard() {
         </View>
       ) : activeTab === 'SINGLE' ? (
         <FlatList
-          data={displayedCommandes}
+          data={mergedItems}
           renderItem={({ item }) => {
+            const isCommande = item.uiType === 'COMMANDE';
             const isAssignedToMe = item.livreurId === userId;
 
-            // Logique de badge identique Angular
+            // Logic for revenue
+            let revenue = 0;
+            if (isCommande) {
+              revenue = item.prixTotalAvecLivraison;
+            } else {
+              revenue = calculateDemandeRevenue(item, profile?.moyen);
+            }
+
+            // Statut translation and styling
             let badgeStyle = styles.badgeDefault;
             let textStyle = styles.badgeTextDefault;
+            let displayStatut = "";
 
-            if (item.statut === Statut.CONFIRMED) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
-            else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
-            else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+            if (isCommande) {
+              displayStatut = translateStatut(item.statut);
+              if (item.statut === Statut.CONFIRMED) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
+              else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
+              else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+            } else {
+              displayStatut = translateStatutDemande(item.statut);
+              if (item.statut === StatutDemande.CONFIRMEE) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
+              else if (item.statut === StatutDemande.EN_COURS) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
+              else if (item.statut === StatutDemande.LIVREE) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+            }
 
             return (
               <TouchableOpacity
                 style={styles.card}
                 activeOpacity={0.9}
-                onPress={() => (navigation as any).navigate('CommandeDetails', { commandeId: item.id })}
+                onPress={() => {
+                  if (isCommande) {
+                    navigation.navigate('CommandeDetails', { commandeId: item.id });
+                  } else {
+                    navigation.navigate('DemandeDetail', { demandeId: item.id });
+                  }
+                }}
               >
                 {/* Header Carte */}
                 <View style={styles.cardHeader}>
-                  <View style={styles.iconContainer}>
-                    <Ionicons name="cube-outline" size={20} color="#059669" />
+                  <View style={[styles.iconContainer, !isCommande && { backgroundColor: '#dbeafe' }]}>
+                    <Ionicons name={isCommande ? "cube-outline" : "bicycle-outline"} size={20} color={isCommande ? "#059669" : "#2563eb"} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.orderId}>#{item.id}</Text>
+                    <Text style={styles.orderId}>{isCommande ? 'C' : 'D'}#{item.id}</Text>
                     {item.livreurId ? (
                       <Text style={styles.assignedTo}>
                         Assigné à: {isAssignedToMe ? 'Moi' : `Livreur ${item.livreurId}`}
@@ -540,7 +659,7 @@ export default function LivreurDashboard() {
                     )}
                   </View>
                   <View style={[styles.badge, badgeStyle]}>
-                    <Text style={[styles.badgeText, textStyle]}>{translateStatut(item.statut)}</Text>
+                    <Text style={[styles.badgeText, textStyle]}>{displayStatut}</Text>
                   </View>
                 </View>
 
@@ -548,36 +667,40 @@ export default function LivreurDashboard() {
                 <View style={styles.cardBody}>
                   <View style={styles.row}>
                     <Ionicons name="person-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>{item.nom} {item.prenom}</Text>
+                    <Text style={styles.infoText}>{isCommande ? `${item.nom} ${item.prenom}` : `${item.nomDestinataire} ${item.prenomDestinataire}`}</Text>
                   </View>
                   <View style={styles.row}>
                     <Ionicons name="location-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>{item.adresse?.rue}, {item.adresse?.delegation}</Text>
+                    <Text style={styles.infoText}>
+                      {isCommande
+                        ? `${item.adresse?.rue}, ${item.adresse?.delegation}`
+                        : `${item.adresseCourteDestinataire}, ${item.villeDestinataire}`}
+                    </Text>
                   </View>
                   <View style={styles.row}>
                     <Ionicons name="call-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>{item.numTel}</Text>
+                    <Text style={styles.infoText}>{isCommande ? item.numTel : item.telephoneDestinataire}</Text>
                   </View>
                   <View style={styles.totalRow}>
-                    <Text style={styles.itemCount}>{item.produits?.length || 0} articles</Text>
-                    <Text style={styles.totalPrice}>{item.prixTotalAvecLivraison} TND</Text>
+                    <Text style={styles.itemCount}>{isCommande ? `${item.produits?.length || 0} articles` : item.typeArticle}</Text>
+                    <Text style={styles.totalPrice}>{revenue} TND</Text>
                   </View>
                 </View>
 
                 {/* Actions */}
                 <View style={styles.cardFooter}>
-                  {/* Bouton Accepter / Ignorer (Visible si CONFIRMED et pas encore assigné) */}
-                  {(item.statut === Statut.CONFIRMED && !isAssignedToMe) && (
+                  {/* Bouton Accepter / Ignorer */}
+                  {((isCommande ? item.statut === Statut.CONFIRMED : item.statut === StatutDemande.CONFIRMEE) && !isAssignedToMe) && (
                     <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
                       <TouchableOpacity onPress={() => handleIgnore(item.id)} style={styles.btnIgnore}>
                         <Text style={styles.btnTextIgnore}>Ignorer</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => handleAccept(item)}
-                        style={[styles.btnPrimary, isBlockedForCmd(item) && styles.btnDisabled]}
-                        disabled={isBlockedForCmd(item)}
+                        onPress={() => isCommande ? handleAccept(item) : handleAcceptDemande(item)}
+                        style={[styles.btnPrimary, isBlockedForSingle(item) && styles.btnDisabled]}
+                        disabled={isBlockedForSingle(item)}
                       >
-                        <Text style={styles.btnTextPrimary}>{isBlockedForCmd(item) ? 'Bloqué' : 'Accepter'}</Text>
+                        <Text style={styles.btnTextPrimary}>{isBlockedForSingle(item) ? 'Bloqué' : 'Accepter'}</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -585,13 +708,19 @@ export default function LivreurDashboard() {
                   {/* Actions si assigné à MOI */}
                   {isAssignedToMe && (
                     <>
-                      {item.statut === Statut.ACCEPTED && (
-                        <TouchableOpacity onPress={() => handleStatutChange(item, Statut.SHIPPED)} style={styles.btnOrange}>
+                      {((isCommande && item.statut === Statut.ACCEPTED) || (!isCommande && item.statut === StatutDemande.ACCEPTEE)) && (
+                        <TouchableOpacity
+                          onPress={() => isCommande ? handleStatutChange(item, Statut.SHIPPED) : handleStatutChangeDemande(item, StatutDemande.EN_COURS)}
+                          style={styles.btnOrange}
+                        >
                           <Text style={styles.btnTextWhite}>Commencer Livraison</Text>
                         </TouchableOpacity>
                       )}
-                      {item.statut === Statut.SHIPPED && (
-                        <TouchableOpacity onPress={() => handleStatutChange(item, Statut.DELIVERED)} style={styles.btnSuccess}>
+                      {((isCommande && item.statut === Statut.SHIPPED) || (!isCommande && item.statut === StatutDemande.EN_COURS)) && (
+                        <TouchableOpacity
+                          onPress={() => isCommande ? handleStatutChange(item, Statut.DELIVERED) : handleStatutChangeDemande(item, StatutDemande.LIVREE)}
+                          style={styles.btnSuccess}
+                        >
                           <Text style={styles.btnTextWhite}>Livré</Text>
                         </TouchableOpacity>
                       )}
@@ -601,13 +730,14 @@ export default function LivreurDashboard() {
               </TouchableOpacity>
             );
           }}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => `${item.uiType}-${item.id}`}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching}
+              refreshing={isRefetching || isRefetchingDemandes}
               onRefresh={() => {
                 refetchCommandes();
+                refetchDemandes();
                 refetchGroups();
                 refreshProfile();
                 fetchDayCounts();
@@ -618,14 +748,10 @@ export default function LivreurDashboard() {
           ListEmptyComponent={
             <View style={styles.emptyContent}>
               <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
-              <Text style={styles.emptyLabelText}>Aucune commande</Text>
-              <Text style={styles.emptySubLabelText}>Il n'y a pas de commandes prévues pour cette date.</Text>
+              <Text style={styles.emptyLabelText}>Aucune livraison</Text>
+              <Text style={styles.emptySubLabelText}>Il n'y a pas de livraisons prévues pour cette date.</Text>
             </View>
           }
-          initialNumToRender={5}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          removeClippedSubviews={true}
         />
       ) : (
         <FlatList
