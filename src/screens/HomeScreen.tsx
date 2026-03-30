@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-    Package, Rocket, History, Bell, BellOff, ChevronRight, Navigation2, LogOut, User,
+    Package,Motorbike, Rocket, History, Bell, BellOff, ChevronRight, Navigation2, LogOut, User,
     MapPin, Home as HomeIcon, ClipboardList
 } from 'lucide-react-native';
 import { useAudioPlayer } from 'expo-audio';
@@ -38,6 +38,7 @@ export default function HomeScreen() {
     const [isOnline, setIsOnline] = useState(false);
     const [loadingStatus, setLoadingStatus] = useState(false);
     const [livreurInfo, setLivreurInfo] = useState<any>(null);
+    const [ongoingDeliveries, setOngoingDeliveries] = useState<any[]>([]);
 
     const player = useAudioPlayer(require('../../assets/Notification.mp3'));
     const isOnlineRef = useRef(isOnline);
@@ -106,6 +107,10 @@ export default function HomeScreen() {
                 groupesData = await GrandeCommandeService.getGrandesCommandes(userId);
             } catch(e) {}
 
+            // Fetch ongoing deliveries from dedicated API
+            const ongoing = await LivreurService.getCurrentOrders(userId).catch(() => []);
+            setOngoingDeliveries(Array.isArray(ongoing) ? ongoing : []);
+
             // Fetch Current Trip
             const activeCommandes = allCmds.filter((c: Commande) => c.livreurId === userId && (c.statut === Statut.SHIPPED || c.statut === Statut.ACCEPTED));
             const activeDemandes = dmdData.filter((d: any) => d.livreurId === userId && (d.statut === StatutDemande.EN_COURS || d.statut === StatutDemande.ACCEPTEE));
@@ -134,6 +139,15 @@ export default function HomeScreen() {
                     destination: `${dmd.adresseCourteDestinataire || ''}, ${dmd.villeDestinataire || ''}`,
                     eta: 'Trajet',
                     data: dmd
+                });
+            } else if (Array.isArray(ongoing) && ongoing.length > 0) {
+                // Fallback: use first ongoing delivery from getCurrentOrders API
+                const first = ongoing[0];
+                setCurrentTrip({
+                    type: 'COMMANDE',
+                    destination: `${first.adresse?.rue || ''}, ${first.adresse?.gouvernerat || 'En cours'}`,
+                    eta: 'Trajet',
+                    data: first
                 });
             } else {
                 setCurrentTrip(null);
@@ -306,11 +320,11 @@ export default function HomeScreen() {
                         onPress={() => navigation.navigate('DemandesList')}
                     >
                         <View style={styles.cardHeader}>
-                            <View style={[styles.cardIconBox, { backgroundColor: '#fee2e2' }]}>
-                                <Rocket size={24} color="#dc2626" />
+                            <View style={[styles.cardIconBox, { backgroundColor: '#e2f3feff' }]}>
+                                <Motorbike size={24} color="blue" />
                             </View>
                             {demandesCount > 0 && (
-                                <View style={[styles.activeBadge, { backgroundColor: '#dc2626' }]}>
+                                <View style={[styles.activeBadge, { backgroundColor: 'blue' }]}>
                                     <Text style={[styles.activeBadgeText, { color: 'white' }]}>NOUVEAU</Text>
                                 </View>
                             )}
@@ -319,6 +333,36 @@ export default function HomeScreen() {
                         <Text style={styles.cardDesc}>Livraisons spéciales et courses express.</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* ONGOING DELIVERIES LIST (New) */}
+                {ongoingDeliveries && ongoingDeliveries.length > 0 && (
+                    <View style={{ marginBottom: 20 }}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>VOS COURSES ACCEPTÉES</Text>
+                        </View>
+                        {ongoingDeliveries.map((item: any, index: number) => (
+                            <View key={index} style={styles.ongoingItemCard}>
+                                <View style={styles.ongoingItemHeader}>
+                                    <View style={[styles.cardIconBox, { backgroundColor: '#e0f2fe' }]}>
+                                        <ClipboardList size={22} color="#0369a1" />
+                                    </View>
+                                    <View style={{ flex: 1, marginLeft: 12 }}>
+                                        <Text style={styles.ongoingItemTitle}>Commande #{item.id}</Text>
+                                        <Text style={styles.ongoingItemSubtitle} numberOfLines={1}>
+                                            {item.adresse?.rue || item.adresse?.gouvernerat || 'En cours...'}
+                                        </Text>
+                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.viewDetailBtn}
+                                        onPress={() => navigation.navigate('CommandeDetails', { commandeId: item.id })}
+                                    >
+                                        <Text style={styles.viewDetailText}>Voir Détails</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
+                )}
 
                 {/* HISTORIQUE CARD */}
                 <TouchableOpacity
@@ -383,7 +427,7 @@ export default function HomeScreen() {
                             </TouchableOpacity>
                         </View>
                     </View>
-                ) : (
+                ) : ongoingDeliveries.length === 0 ? (
                     <View>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>AUCUN TRAJET</Text>
@@ -394,7 +438,7 @@ export default function HomeScreen() {
                             <Text style={styles.emptyTripSubText}>Restez en ligne pour recevoir des demandes.</Text>
                         </View>
                     </View>
-                )}
+                ) : null}
 
                 <View style={{ height: 110 }} />
             </ScrollView>
@@ -692,6 +736,44 @@ const styles = StyleSheet.create({
     historySubtitle: {
         fontSize: 12,
         color: '#94a3b8',
+    },
+    ongoingItemCard: {
+        backgroundColor: 'white',
+        borderRadius: 20,
+        padding: 16,
+        marginBottom: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+    },
+    ongoingItemHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    ongoingItemTitle: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    ongoingItemSubtitle: {
+        fontSize: 13,
+        color: '#64748b',
+        marginTop: 2,
+    },
+    viewDetailBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: '#f1f5f9',
+    },
+    viewDetailText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#059669',
     },
     tripCard: {
         backgroundColor: 'white',

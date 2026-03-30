@@ -7,15 +7,17 @@ import { Platform } from 'react-native';
 const isAndroidExpoGo = Platform.OS === 'android' && Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 // Configuration de la gestion des notifications au premier plan
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-        shouldShowBanner: true,
-        shouldShowList: true,
-    }),
-});
+if (!isAndroidExpoGo) {
+    Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
+        }),
+    });
+}
 
 export const NotificationService = {
     // Demander les permissions et récupérer le Token Expo
@@ -77,14 +79,22 @@ export const NotificationService = {
 
     // Déclencher une notification locale immédiate
     presentLocalNotification: async (title: string, body: string, data?: any) => {
-        await Notifications.scheduleNotificationAsync({
-            content: {
-                title,
-                body,
-                data,
-                sound: true,
-            },
-            trigger: null, // null signifie exécution immédiate
-        });
+        if (isAndroidExpoGo) {
+            console.log('[Notification] Skipped in Expo Go:', title, body);
+            return;
+        }
+        try {
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title,
+                    body,
+                    data,
+                    sound: true,
+                },
+                trigger: null, // null signifie exécution immédiate
+            });
+        } catch (e) {
+            console.warn('[Notification] Failed to schedule:', e);
+        }
     }
 };

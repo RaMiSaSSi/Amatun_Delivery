@@ -231,40 +231,21 @@ export default function ProfileScreen() {
                                     </View>
                                 </View>
                             </TouchableOpacity>
+                            <View style={styles.optionDivider} />
+
+                            <TouchableOpacity style={styles.optionItem}>
+                                <View style={styles.optionIconBox}>
+                                    <Briefcase size={20} color="#64748b" />
+                                </View>
+                                <View style={styles.optionTextContent}>
+                                    <Text style={styles.optionLabel}>Disponibilité</Text>
+                                    <Text style={styles.optionValue}>{profile?.dispo || 'Non définie'}</Text>
+                                </View>
+                            </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* App Settings */}
-                    {/* <View style={styles.sectionContainer}>
-                        <Text style={styles.sectionTitle}>Préférences App</Text>
-                        <View style={styles.optionsList}>
-                            <TouchableOpacity style={styles.menuItem}>
-                                <View style={[styles.menuIconBox, { backgroundColor: '#eff6ff' }]}>
-                                    <Bell size={18} color="#3b82f6" />
-                                </View>
-                                <Text style={styles.menuLabel}>Notifications</Text>
-                                <ChevronLeft size={18} color="#cbd5e1" style={{ transform: [{ rotate: '180deg' }] }} />
-                            </TouchableOpacity>
-                            
-                            <TouchableOpacity style={styles.menuItem}>
-                                <View style={[styles.menuIconBox, { backgroundColor: '#f5f3ff' }]}>
-                                    <MessageSquare size={18} color="#8b5cf6" />
-                                </View>
-                                <Text style={styles.menuLabel}>Aide & Support</Text>
-                                <ChevronLeft size={18} color="#cbd5e1" style={{ transform: [{ rotate: '180deg' }] }} />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity style={styles.menuItem}>
-                                <View style={[styles.menuIconBox, { backgroundColor: '#f1f5f9' }]}>
-                                    <Info size={18} color="#64748b" />
-                                </View>
-                                <Text style={styles.menuLabel}>À propos d'Amatun</Text>
-                                <ChevronLeft size={18} color="#cbd5e1" style={{ transform: [{ rotate: '180deg' }] }} />
-                            </TouchableOpacity>
-                        </View>
-                    </View> */}
-
-                    {/* Logout */}
+                    
                     <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
                         <LinearGradient
                             colors={['#fee2e2', '#fecaca']}
