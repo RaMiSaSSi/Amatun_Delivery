@@ -183,6 +183,9 @@ export default function HomeScreen() {
                     <Text style={styles.userName}>Partenaire Livreur</Text>
                 </View>
                 <View style={styles.headerActions}>
+                    <TouchableOpacity onPress={() => navigation.navigate('QRScanner')} style={styles.scanBtn}>
+                        <Ionicons name="qr-code-outline" size={22} color="#3b82f6" />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.profileBtn}>
                         <Ionicons name="person-outline" size={22} color="#059669" />
                     </TouchableOpacity>
@@ -327,6 +330,14 @@ const styles = StyleSheet.create({
         height: 45,
         borderRadius: 15,
         backgroundColor: '#ecfdf5',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    scanBtn: {
+        width: 45,
+        height: 45,
+        borderRadius: 15,
+        backgroundColor: '#eff6ff',
         justifyContent: 'center',
         alignItems: 'center',
     },

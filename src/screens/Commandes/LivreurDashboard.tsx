@@ -363,9 +363,10 @@ export default function LivreurDashboard() {
     let badgeStyle = styles.badgeDefault;
     let textStyle = styles.badgeTextDefault;
 
-    if (item.statut === Statut.CONFIRMED) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
+    if (item.statut === Statut.CONFIRMED || item.statut === Statut.EN_COURS_DE_RETOUR) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
     else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
     else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+    else if (item.statut === Statut.EN_COURS_D_ECHANGE) { badgeStyle = styles.badgeIndigo; textStyle = { color: '#3730a3' } }
 
     return (
       <TouchableOpacity
@@ -621,9 +622,10 @@ export default function LivreurDashboard() {
 
             if (isCommande) {
               displayStatut = translateStatut(item.statut);
-              if (item.statut === Statut.CONFIRMED) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
+              if (item.statut === Statut.CONFIRMED || item.statut === Statut.EN_COURS_DE_RETOUR) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
               else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
               else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+              else if (item.statut === Statut.EN_COURS_D_ECHANGE) { badgeStyle = styles.badgeIndigo; textStyle = { color: '#3730a3' } }
             } else {
               displayStatut = translateStatutDemande(item.statut);
               if (item.statut === StatutDemande.CONFIRMEE) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
@@ -986,6 +988,7 @@ const styles = StyleSheet.create({
   badgePurple: { backgroundColor: '#f3e8ff' },
   badgeOrange: { backgroundColor: '#ffedd5' },
   badgeEmerald: { backgroundColor: '#d1fae5' },
+  badgeIndigo: { backgroundColor: '#e0e7ff' },
   badgeText: { fontSize: 11, fontWeight: 'bold' },
   badgeTextDefault: { color: '#64748b' },
 

@@ -80,9 +80,9 @@ export const LivreurService = {
   },
 
   // Changer le statut (Shipped, Delivered, etc.)
-  updateStatut: async (commandeId: number, statut: string) => {
+  updateStatut: async (commandeId: number, statut: string, raison?: string) => {
     const response = await api.put(`/livreur/commande/${commandeId}/statut`, null, {
-      params: { statut }
+      params: { statut, raison }
     });
     return response.data;
   },
@@ -143,6 +143,11 @@ export const LivreurService = {
     const response = await api.put(`/livreur/status`, null, {
       params: { livreurId, online }
     });
+    return response.data;
+  },
+
+  getCommandeByToken: async (token: string) => {
+    const response = await api.get(`/livreur/commande/by-token/${token}`);
     return response.data;
   },
 };

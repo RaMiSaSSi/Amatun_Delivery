@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, StatusBar, Image, Linking, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, StatusBar, Image, Linking, Platform, Dimensions, Modal, Pressable } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LivreurService, BASE_URL } from '../../services/LivreurService';
@@ -40,6 +40,21 @@ export default function CommandeDetailsScreen() {
     const { profile, isBlockedForCmd, getDeliveryFee, refreshProfile } = useLivreur();
     const { accept, updateStatut } = useCommandes('');
     const { userId } = useAuth();
+    const [isReturnModalVisible, setIsReturnModalVisible] = useState(false);
+
+    const RAISONS_RETOUR = [
+        { label: 'Injoignable', value: 'INJOURNABLE' },
+        { label: 'Ne répond pas', value: 'NE_REPOND_PAS' },
+        { label: 'Adresse incorrecte', value: 'ADRESSE_INCORRECTE' },
+        { label: 'Numéro invalide', value: 'NUMERO_INVALIDE' },
+        { label: 'Rendez-vous indisponible', value: 'RENDEZ_VOUS_INDISPONIBLE' },
+        { label: 'Annulation client', value: 'ANNULATION_CLIENT' },
+        { label: 'Client non sérieux', value: 'CLIENT_NON_SERIEUX' },
+        { label: 'Colis non conforme', value: 'COLIS_NON_CONFORME' },
+        { label: 'Livreur mis à la liste noire', value: 'LIVREUR_MIS_A_LA_LISTE_NOIRE' },
+        { label: 'Montant incorrect', value: 'MONTANT_INCORRECT' },
+        { label: 'Demande ouverture colis', value: 'DEMANDE_OUVERTURE_COLIS' }
+    ];
 
 
     useEffect(() => {
@@ -217,10 +232,15 @@ export default function CommandeDetailsScreen() {
     };
 
     const handleMarkAsReturned = async () => {
+        setIsReturnModalVisible(true);
+    };
+
+    const handleSelectReason = async (reasonValue: string) => {
         if (!commande) return;
+        setIsReturnModalVisible(false);
         try {
-            await LivreurService.updateStatut(commande.id, Statut.RETURNED);
-            Alert.alert("Succès", "Commande marquée comme retournée !"); // "Commande marked as returned!"
+            await LivreurService.updateStatut(commande.id, Statut.RETURNED, reasonValue);
+            Alert.alert("Succès", "Commande marquée comme retournée !");
             loadDetails();
         } catch (error) {
             Alert.alert("Erreur", "Impossible de mettre à jour le statut.");
@@ -270,7 +290,14 @@ export default function CommandeDetailsScreen() {
                 </TouchableOpacity>
                 <View>
                     <Text style={styles.headerTitle}>Détails Commande</Text>
-                    <Text style={styles.headerSubtitle}>#{commande.id}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.headerSubtitle}>#{commande.id}</Text>
+                        {commande.code && (
+                            <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#fcd34d' }}>
+                                <Text style={{ color: '#92400e', fontSize: 10, fontWeight: 'bold' }}>{commande.code}</Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
             </View>
 
@@ -510,6 +537,40 @@ export default function CommandeDetailsScreen() {
                 </View>
 
             </ScrollView>
+
+            {/* Modal Raison de Retour */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={isReturnModalVisible}
+                onRequestClose={() => setIsReturnModalVisible(false)}
+            >
+                <Pressable
+                    style={styles.modalOverlay}
+                    onPress={() => setIsReturnModalVisible(false)}
+                >
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Raison du retour</Text>
+                            <TouchableOpacity onPress={() => setIsReturnModalVisible(false)}>
+                                <Ionicons name="close" size={24} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.modalSubtitle}>Sélectionnez la raison pour laquelle cette commande est retournée.</Text>
+
+                        {RAISONS_RETOUR.map((raison) => (
+                            <TouchableOpacity
+                                key={raison.value}
+                                style={styles.reasonOption}
+                                onPress={() => handleSelectReason(raison.value)}
+                            >
+                                <Text style={styles.reasonText}>{raison.label}</Text>
+                                <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </Pressable>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -521,6 +582,8 @@ function getStatusBadge(statut: Statut) {
         case Statut.SHIPPED: return { bg: '#fff7ed', text: '#f97316' };
         case Statut.CONFIRMED: return { bg: '#faf5ff', text: '#a855f7' };
         case Statut.ACCEPTED: return { bg: '#eff6ff', text: '#3b82f6' };
+        case Statut.EN_COURS_DE_RETOUR: return { bg: '#f3e8ff', text: '#a855f7' };
+        case Statut.EN_COURS_D_ECHANGE: return { bg: '#e0e7ff', text: '#6366f1' };
         default: return { bg: '#f8fafc', text: '#64748b' };
     }
 }
@@ -781,5 +844,55 @@ const styles = StyleSheet.create({
     },
     primaryActionButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
     shippedButton: { backgroundColor: '#10b981', shadowColor: '#10b981' },
-    returnedButton: { backgroundColor: '#fff1f2', borderColor: '#fee2e2', borderWidth: 1 }
+    returnedButton: { backgroundColor: '#fff1f2', borderColor: '#fee2e2', borderWidth: 1 },
+
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContent: {
+        width: '100%',
+        backgroundColor: '#ffffff',
+        borderRadius: 24,
+        padding: 24,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b'
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        color: '#64748b',
+        marginBottom: 20,
+        lineHeight: 20
+    },
+    reasonOption: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9'
+    },
+    reasonText: {
+        fontSize: 16,
+        color: '#334155',
+        fontWeight: '600'
+    }
 });

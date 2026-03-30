@@ -10,6 +10,8 @@ export const translateStatut = (statut: Statut | string): string => {
         case Statut.DELIVERED: return "Livrée";
         case Statut.RETURNED: return "Retournée";
         case Statut.CANCELLED: return "Annulée";
+        case Statut.EN_COURS_DE_RETOUR: return "En cours de retour";
+        case Statut.EN_COURS_D_ECHANGE: return "En cours d'échange";
         default: return statut.toString();
     }
 };

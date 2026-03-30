@@ -5,7 +5,9 @@ export enum Statut {
   SHIPPED = 'SHIPPED',
   DELIVERED = 'DELIVERED',
   RETURNED = 'RETURNED',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
+  EN_COURS_DE_RETOUR = 'EN_COURS_DE_RETOUR',
+  EN_COURS_D_ECHANGE = 'EN_COURS_D_ECHANGE'
 }
 export enum Type {
   EXPRESS = 'EXPRESS',
@@ -45,6 +47,8 @@ export interface Commande {
   livreurId?: number;
   acceptedByLivreur?: boolean;
   montantUser?: number;
+  code?: string;
+  isExchange?: boolean;
 }
 
 export interface CommandeProduit {

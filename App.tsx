@@ -14,6 +14,7 @@ import { useAuth, AuthProvider } from './src/context/AuthContext';
 import DemandeDetailScreen from './src/screens/Demandes/DemandeDetailScreen';
 import DemandesListScreen from './src/screens/Demandes/DemandeListScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import QRScannerScreen from './src/screens/QRScannerScreen';
 import GrandeCommandeDetailScreen from './src/screens/Commandes/GrandeCommandeDetailScreen';
 import { NotificationService } from './src/services/NotificationService';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -75,6 +76,7 @@ function AppNavigator() {
           <Stack.Screen name="DemandesList" component={DemandesListScreen} />
           <Stack.Screen name="DemandeDetail" component={DemandeDetailScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="QRScanner" component={QRScannerScreen} />
           <Stack.Screen name="GrandeCommandeDetail" component={GrandeCommandeDetailScreen} />
         </>
       ) : (
