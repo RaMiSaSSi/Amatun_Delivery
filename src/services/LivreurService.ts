@@ -12,6 +12,8 @@ const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+    'bypass-tunnel-reminder': 'true'
   },
 });
 
@@ -139,6 +141,8 @@ export const LivreurService = {
     return response.data;
   },
 
+
+
   updateStatus: async (livreurId: number, online: boolean) => {
     const response = await api.put(`/livreur/status`, null, {
       params: { livreurId, online }
@@ -146,9 +150,16 @@ export const LivreurService = {
     return response.data;
   },
 
-  getCommandeByToken: async (token: string) => {
-    const response = await api.get(`/livreur/commande/by-token/${token}`);
-    return response.data;
+  getCurrentOrders: async (livreurId: number) => {
+    try {
+      const response = await api.get(`/livreur/commandes/current`, {
+        params: { livreurId }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('[FRONT] Exception getCurrentOrders:', error);
+      throw error;
+    }
   },
 };
 
