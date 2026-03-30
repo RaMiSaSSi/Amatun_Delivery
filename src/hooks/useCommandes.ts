@@ -5,7 +5,7 @@ import { Commande, Statut } from '../Types/types';
 import { useHaptics } from './useHaptics';
 import * as Haptics from 'expo-haptics';
 
-export const useCommandes = (selectedDate: string) => {
+export const useCommandes = (selectedDate: string, enabled: boolean = true) => {
     const { userId } = useAuth();
     const queryClient = useQueryClient();
     const { notification } = useHaptics();
@@ -13,7 +13,7 @@ export const useCommandes = (selectedDate: string) => {
     const commandesQuery = useQuery({
         queryKey: ['commandes', userId, selectedDate],
         queryFn: () => (userId ? LivreurService.getCommandesByDay(selectedDate, userId) : []),
-        enabled: !!userId && !!selectedDate,
+        enabled: enabled && !!userId && !!selectedDate,
     });
 
     const acceptMutation = useMutation({

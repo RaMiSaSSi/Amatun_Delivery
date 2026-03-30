@@ -5,7 +5,7 @@ import { DemandeLivraison, StatutDemande } from '../Types/DemandeLivraison';
 import { useHaptics } from './useHaptics';
 import * as Haptics from 'expo-haptics';
 
-export const useDemandes = () => {
+export const useDemandes = (enabled: boolean = true) => {
     const { userId } = useAuth();
     const queryClient = useQueryClient();
     const { notification } = useHaptics();
@@ -13,7 +13,7 @@ export const useDemandes = () => {
     const demandesQuery = useQuery({
         queryKey: ['demandes', userId],
         queryFn: () => (userId ? DemandeLivraisonService.getDemandesAcceptees(userId) : []),
-        enabled: !!userId,
+        enabled: enabled && !!userId,
     });
 
     const acceptMutation = useMutation({

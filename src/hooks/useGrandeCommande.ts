@@ -1,24 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { GrandeCommandeService } from '../services/GrandeCommandeService';
+import { LivreurService } from '../services/LivreurService';
+import { GrandeCommande } from '../Types/types';
 import { useAuth } from '../context/AuthContext';
 import { useHaptics } from './useHaptics';
 import * as Haptics from 'expo-haptics';
 
-export const useGrandeCommande = () => {
+export const useGrandeCommande = (enabled: boolean = true) => {
     const { userId } = useAuth();
     const queryClient = useQueryClient();
     const { notification, impact } = useHaptics();
 
     const grandesCommandesQuery = useQuery({
         queryKey: ['grandes-commandes', userId],
-        queryFn: () => (userId ? GrandeCommandeService.getGrandesCommandes(userId) : []),
-        enabled: !!userId,
+        queryFn: async () => {
+            if (!userId) return [];
+            const [assigned, available] = await Promise.all([
+                LivreurService.getGrandesCommandes(userId),
+                LivreurService.getAvailableGrandesCommandes()
+            ]);
+            
+            // Fusionner les listes et éviter les doublons
+            const map = new Map<number, GrandeCommande>();
+            assigned.forEach((gc: GrandeCommande) => map.set(gc.id, gc));
+            available.forEach((gc: GrandeCommande) => map.set(gc.id, gc));
+            
+            return Array.from(map.values()).sort((a, b) => b.id - a.id);
+        },
+        enabled: enabled && !!userId,
     });
 
     const acceptMutation = useMutation({
         mutationFn: (gcId: number) => {
             if (!userId) throw new Error('No userId');
-            return GrandeCommandeService.accepterGrandeCommande(gcId, userId);
+            return LivreurService.acceptGrandeCommande(gcId, userId);
         },
         onSuccess: () => {
             notification(Haptics.NotificationFeedbackType.Success);

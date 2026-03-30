@@ -22,5 +22,11 @@ export const GrandeCommandeService = {
     getGrandeCommandeById: async (id: number): Promise<GrandeCommande> => {
         const response = await api.get(`/livreur/grande-commande/${id}`);
         return response.data;
+    },
+
+    // Récupérer la liste des grandes commandes disponibles (marché)
+    getAvailableGrandesCommandes: async (): Promise<GrandeCommande[]> => {
+        const response = await api.get(`/livreur/grandes-commandes/available`);
+        return response.data;
     }
 };

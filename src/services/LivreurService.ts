@@ -30,25 +30,29 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    // Si erreur 401 (Non autorisé) et qu'on n'a pas déjà essayé de refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Si erreur 401 (Non autorisé) ou 403 (Souvent JWT expiré dans Spring Security)
+    if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
         const refreshToken = await StorageService.getItem('refreshToken');
-        const email = await StorageService.getItem('email'); // Utile si votre backend demande l'email
-        if (!refreshToken) {
-          throw new Error('No refresh token');
+        const email = await StorageService.getItem('email');
+        
+        if (!refreshToken || !email) {
+          throw new Error('No refresh token or email found');
         }
-        // Appel au endpoint Refresh
-        // Adaptez le body selon ce que 'AuthenticationService.refreshToken' envoie dans Angular
+
+        // Appel au endpoint Refresh via axios direct pour éviter les intercepteurs sur cet appel
         const response = await axios.post(`${BASE_URL}/auth/refresh-token`, {
           refreshToken,
-          email // Inclure si votre backend le demande
+          email
         });
+
         const { jwt, refreshToken: newRefreshToken } = response.data;
+        
         // Sauvegarder les nouveaux tokens
         await StorageService.setItem('jwt', jwt);
         if (newRefreshToken) await StorageService.setItem('refreshToken', newRefreshToken);
+        
         // Mettre à jour le header et rejouer la requête initiale
         api.defaults.headers.common['Authorization'] = `Bearer ${jwt}`;
         originalRequest.headers['Authorization'] = `Bearer ${jwt}`;
@@ -57,7 +61,6 @@ api.interceptors.response.use(
       } catch (refreshError) {
         // Si le refresh échoue, on déconnecte tout
         await StorageService.clearAuth();
-        // On pourrait émettre un événement ici pour rediriger vers Login
         return Promise.reject(refreshError);
       }
     }
@@ -160,6 +163,42 @@ export const LivreurService = {
       console.error('[FRONT] Exception getCurrentOrders:', error);
       throw error;
     }
+  },
+
+  getCommandeByQrToken: async (qrToken: string) => {
+    const response = await api.get(`/livreur/commande/by-token/${qrToken}`);
+    return response.data;
+  },
+
+  acceptGrandeCommande: async (id: number, livreurId: number) => {
+    const response = await api.post(`/livreur/grande-commande/${id}/accept`, null, {
+      params: { livreurId }
+    });
+    return response.data;
+  },
+
+  getGrandesCommandes: async (livreurId: number) => {
+    const response = await api.get(`/livreur/grandes-commandes`, {
+      params: { livreurId }
+    });
+    return response.data;
+  },
+
+  getAvailableGrandesCommandes: async () => {
+    const response = await api.get(`/livreur/grandes-commandes/available`);
+    return response.data;
+  },
+
+  getGrandeCommandeById: async (id: number) => {
+    const response = await api.get(`/livreur/grande-commande/${id}`);
+    return response.data;
+  },
+
+  updateGrandeCommandeStatut: async (grandeCommandeId: number, statut: string) => {
+    const response = await api.post(`/livreur/grande-commande/${grandeCommandeId}/statut`, null, {
+      params: { statut }
+    });
+    return response.data;
   },
 };
 

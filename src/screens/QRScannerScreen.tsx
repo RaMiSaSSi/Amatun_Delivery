@@ -39,7 +39,7 @@ export default function QRScannerScreen() {
 
         try {
             // Le QR code contient le token
-            const commande = await LivreurService.getCommandeByToken(data);
+            const commande = await LivreurService.getCommandeByQrToken(data);
             if (commande && commande.id) {
                 navigation.replace('CommandeDetails', { commandeId: commande.id });
             } else {

@@ -103,8 +103,7 @@ export default function HomeScreen() {
 
             let groupesData: any[] = [];
             try {
-                const { GrandeCommandeService } = require('../services/GrandeCommandeService');
-                groupesData = await GrandeCommandeService.getGrandesCommandes(userId);
+                groupesData = await LivreurService.getGrandesCommandes(userId);
             } catch(e) {}
 
             // Fetch ongoing deliveries from dedicated API

@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, StatusBar, Image } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { GrandeCommandeService } from '../../services/GrandeCommandeService';
-import { GrandeCommande } from '../../Types/GrandeCommande.model';
-import { Commande, Statut } from '../../Types/types';
+import { LivreurService } from '../../services/LivreurService';
+import { GrandeCommande, Commande, Statut } from '../../Types/types';
 import { useHaptics } from '../../hooks/useHaptics';
 import * as Haptics from 'expo-haptics';
 import { translateStatut } from '../../utils/translations';
@@ -36,7 +35,7 @@ export default function GrandeCommandeDetailScreen() {
 
     const loadDetails = async () => {
         try {
-            const data = await GrandeCommandeService.getGrandeCommandeById(grandeCommandeId);
+            const data = await LivreurService.getGrandeCommandeById(grandeCommandeId);
             setGrandeCommande(data);
         } catch (error) {
             console.error(error);
@@ -137,7 +136,7 @@ export default function GrandeCommandeDetailScreen() {
                                 {
                                     text: "Accepter", onPress: async () => {
                                         try {
-                                            await GrandeCommandeService.accepterGrandeCommande(grandeCommande.id, grandeCommande.livreurId);
+                                            await LivreurService.acceptGrandeCommande(grandeCommande.id, grandeCommande.livreurId || 0);
                                             Alert.alert("Succès", "Groupe accepté !");
                                             navigation.goBack();
                                         } catch (e) {

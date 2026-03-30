@@ -10,7 +10,7 @@ import { useAudioPlayer } from 'expo-audio'; // Pour le son de notification
 
 import { LivreurService } from '../../services/LivreurService';
 import { WebSocketService } from '../../services/websocket';
-import { Commande, Statut } from '../../Types/types';
+import { Commande, Statut, GrandeCommande } from '../../Types/types';
 import { useAuth } from '../../context/AuthContext';
 import { MoyenTransport } from '../../Types/auth';
 import { translateStatut, translateStatutDemande } from '../../utils/translations';
@@ -21,7 +21,7 @@ import { useGrandeCommande } from '../../hooks/useGrandeCommande';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { GrandeCommande } from '../../Types/GrandeCommande.model';
+
 import { useDemandes } from '../../hooks/useDemandes';
 import { calculateDemandeRevenue } from '../../utils/revenueCalculator';
 import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
@@ -38,6 +38,8 @@ export default function LivreurDashboard() {
 
   const { impact, notification: hapticNotification } = useHaptics();
   const { profile, isBlockedByTotal, isBlockedForCmd, refreshProfile, getDeliveryFee } = useLivreur();
+  const [activeTab, setActiveTab] = useState<'SINGLE' | 'GROUPS'>('SINGLE');
+
   const {
     commandes: remoteCommandes,
     isLoading,
@@ -45,7 +47,7 @@ export default function LivreurDashboard() {
     refetch: refetchCommandes,
     accept,
     updateStatut
-  } = useCommandes(selectedDate);
+  } = useCommandes(selectedDate, activeTab === 'SINGLE');
 
   const {
     grandesCommandes,
@@ -53,7 +55,7 @@ export default function LivreurDashboard() {
     refetch: refetchGroups,
     accept: acceptGroup,
     isAccepting: isAcceptingGroup
-  } = useGrandeCommande();
+  } = useGrandeCommande(activeTab === 'GROUPS');
 
   const {
     demandes: remoteDemandes,
@@ -62,9 +64,7 @@ export default function LivreurDashboard() {
     refetch: refetchDemandes,
     accept: acceptDemande,
     updateStatut: updateStatutDemande
-  } = useDemandes();
-
-  const [activeTab, setActiveTab] = useState<'SINGLE' | 'GROUPS'>('SINGLE');
+  } = useDemandes(activeTab === 'SINGLE');
 
   // Local state for real-time responsiveness
   const [commandes, setCommandes] = useState<Commande[]>([]);
@@ -772,9 +772,9 @@ export default function LivreurDashboard() {
                   <Text style={styles.orderId}>{item.code}</Text>
                   <Text style={styles.groupSubText}>{item.commandes?.length || 0} commandes groupées</Text>
                 </View>
-                <View style={[styles.badge, item.statut === 'ACCEPTED' ? styles.badgeEmerald : styles.badgeDefault]}>
-                  <Text style={[styles.badgeText, item.statut === 'ACCEPTED' ? { color: '#065f46' } : { color: '#64748b' }]}>
-                    {item.statut === 'ACCEPTED' ? 'Accepté' : 'En attente'}
+                <View style={[styles.badge, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? styles.badgeEmerald : styles.badgeDefault]}>
+                  <Text style={[styles.badgeText, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? { color: '#065f46' } : { color: '#64748b' }]}>
+                    {item.statut === Statut.ACCEPTED ? 'Accepté' : (item.statut === Statut.CONFIRMED ? 'Disponible' : 'En attente')}
                   </Text>
                 </View>
               </View>
@@ -787,7 +787,7 @@ export default function LivreurDashboard() {
                       : `${item.totalPrixLivraison} TND`}
                   </Text>
                 </View>
-                {item.statut === 'PENDING' ? (
+                {(item.statut === 'PENDING' || item.statut === 'CONFIRMED') && !item.livreurId ? (
                   <TouchableOpacity
                     style={styles.btnGroupAccept}
                     onPress={() => handleAcceptGroup(item)}

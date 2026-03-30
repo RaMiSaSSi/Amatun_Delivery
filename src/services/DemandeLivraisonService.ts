@@ -65,7 +65,7 @@ export class DemandeLivraisonService {
   static async getMesLivraisons(livreurId: number): Promise<DemandeLivraison[]> {
     console.log(`[FRONT] Appel API: getMesLivraisons(livreurId=${livreurId})`);
     try {
-      const response = await api.get(`${BASE_PATH}/mes-livraisons`, { params: { livreurId } });
+      const response = await api.get(`${BASE_PATH}/mes-livraisons/${livreurId}`);
       console.log(`[FRONT] getMesLivraisons succès: ${Array.isArray(response.data) ? response.data.length : 0} items`);
       return response.data;
     } catch (error) {
