@@ -24,45 +24,21 @@ export class WebSocketService {
       forceBinaryWSFrames: true,
       appendMissingNULLonIncoming: true,
       onConnect: () => {
-        // S'abonner aux notifications personnelles (Ciblées par le backend selon l'état online)
+        // S'abonner aux notifications personnelles
         if (livreurId) {
-          this.client.subscribe(`/topic/livreurs/${livreurId}`, (message) => {
+          this.client.subscribe(`/topic/livreur/${livreurId}/notifications`, (message) => {
             if (message.body) {
-              console.log('📬 WS Message Received on personal topic:', message.body);
-              const data = JSON.parse(message.body);
-
-              // 1. Check for Grande Commande (Bundle of orders)
-              if (data.commandes && Array.isArray(data.commandes)) {
-                console.log('📦 Identified as GRANDE_COMMANDE');
-                this.onMessageCallback({ type: 'GRANDE_COMMANDE', data });
-              }
-              // 2. Check for Demande Livraison (Special requests)
-              else if (data.typeArticle) {
-                console.log('🚲 Identified as NEW_DEMANDE');
-                this.onMessageCallback({ type: 'NEW_DEMANDE', data });
-              }
-              // 3. Check for Personal Message / Notification (Text)
-              else if (typeof data === 'string' || data.message || data.notification) {
-                console.log('🔔 Identified as PERSONAL_NOTIFICATION');
-                this.onMessageCallback({
-                  type: 'PERSONAL_NOTIFICATION',
-                  data: typeof data === 'string' ? data : (data.message || data.notification)
-                });
-              }
-              // 4. Default to single Order
-              else {
-                console.log('📦 Identified as NEW_ORDER');
-                this.onMessageCallback({ type: 'NEW_ORDER', data });
-              }
+              const notification = JSON.parse(message.body);
+              this.handleNotification(notification);
             }
           });
         }
 
-        // S'abonner aux acceptations (Global pour mettre à jour les listes de tous les livreurs)
-        this.client.subscribe('/topic/commande-accepted', (message) => {
+        // S'abonner aux notifications broadcast
+        this.client.subscribe('/topic/livreur/notifications', (message) => {
           if (message.body) {
-            const data = JSON.parse(message.body);
-            this.onMessageCallback({ type: 'ORDER_ACCEPTED', data });
+            const notification = JSON.parse(message.body);
+            this.handleNotification(notification);
           }
         });
       },
@@ -70,6 +46,24 @@ export class WebSocketService {
         console.error('Erreur Broker: ' + frame.headers['message']);
       },
     });
+  }
+
+  private handleNotification(notification: any) {
+    console.log('📬 Notification reçue:', notification.entityType);
+    
+    if (notification.entityType === 'COMMANDE') {
+      this.onMessageCallback({ type: 'NEW_ORDER', data: notification });
+    } else if (notification.entityType === 'GRANDE_COMMANDE') {
+      this.onMessageCallback({ type: 'GRANDE_COMMANDE', data: notification });
+    } else if (notification.entityType === 'DEMANDE_LIVRAISON') {
+      this.onMessageCallback({ type: 'NEW_DEMANDE', data: notification });
+    } else {
+      // Fallback notification text
+      this.onMessageCallback({
+        type: 'PERSONAL_NOTIFICATION',
+        data: notification.message || notification.title
+      });
+    }
   }
 
   async activate() {

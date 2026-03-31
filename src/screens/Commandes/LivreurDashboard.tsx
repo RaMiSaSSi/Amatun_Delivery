@@ -123,95 +123,72 @@ export default function LivreurDashboard() {
       console.log('🔔 Dashboard WebSocket Callback:', msg.type);
 
       if (msg.type === 'NEW_ORDER') {
-        const newCmd = msg.data;
-        console.log('🆕 Nouvelle commande reçue via WS:', newCmd.id);
+        const notif = msg.data;
+        console.log('🆕 Nouvelle notification de commande reçue:', notif.entityId);
 
-        setCommandes(prev => {
-          // Utilisation de .some() pour une vérification plus claire
-          if (prev.some(c => c.id === newCmd.id)) {
-            console.log('⚠️ Commande déjà présente, ignorée.');
-            return prev;
-          }
-          console.log('✅ Ajout de la commande à la liste.');
-          playNotificationSound();
-          NotificationService.presentLocalNotification(
-            "📦 Nouvelle Commande !",
-            `La commande #${newCmd.id} est maintenant disponible.`
-          );
-          Alert.alert("Nouvelle Commande", `Commande #${newCmd.id} disponible !`);
-          // Ajout en haut de la liste, en gardant le tri existant
-          return [newCmd, ...prev].sort((a, b) => b.id - a.id);
-        });
+        playNotificationSound();
+        NotificationService.presentLocalNotification(
+          notif.title || "📦 Nouvelle Commande !",
+          notif.message || `Une nouvelle commande (#${notif.entityId}) est disponible.`
+        );
+        Alert.alert(notif.title || "Nouvelle Commande", notif.message || `Commande #${notif.entityId} disponible !`);
+        
+        // Refresh orders from server to get full data
+        refetchCommandes();
 
       } else if (msg.type === 'ORDER_ACCEPTED') {
-        const acceptedCmd = msg.data;
-        console.log('✅ Commande acceptée via WS:', acceptedCmd.id, 'par livreur:', acceptedCmd.livreurId);
-
-        setCommandes(prev => {
-          const isMyCommand = acceptedCmd.livreurId === userId;
-
-          if (isMyCommand) {
-            // Si c'est à moi, je mets à jour le statut
-            return prev.map(c => c.id === acceptedCmd.id ? {
-              ...c,
-              statut: Statut.ACCEPTED,
-              livreurId: userId
-            } : c);
-          } else {
-            // Si c'est à quelqu'un d'autre, je l'enlève de ma liste
-            return prev.filter(c => c.id !== acceptedCmd.id);
-          }
-        });
-
-        // Recharger le profil pour mettre à jour la balance si c'est moi
-        if (acceptedCmd.livreurId === userId) {
-          refreshProfile();
-        }
+        const notif = msg.data;
+        console.log('✅ Commande acceptée via Notification:', notif.entityId);
+        
+        // Refresh to sync lists
+        refetchCommandes();
+        refreshProfile();
 
       } else if (msg.type === 'PERSONAL_NOTIFICATION') {
+        const notif = msg.data;
         console.log('🔔 Notification personnelle reçue');
         playNotificationSound();
         NotificationService.presentLocalNotification(
-          "🔔 Notification",
-          msg.data
+          notif.title || "🔔 Notification",
+          notif.message || "Message reçu"
         );
-        Alert.alert("Notification Personnelle", msg.data);
-        refetchCommandes(); // Pour être sûr d'avoir les dernières données
+        Alert.alert(notif.title || "Notification", notif.message || "Message reçu");
+        refetchCommandes();
         refreshProfile();
       } else if (msg.type === 'GRANDE_COMMANDE') {
-        const gc: GrandeCommande = msg.data;
-        console.log('📦 Nouveau GROUPE reçu via WS:', gc.id);
+        const notif = msg.data;
+        console.log('📦 Notification GROUPE reçue:', notif.entityId);
         playNotificationSound();
         hapticNotification(Haptics.NotificationFeedbackType.Success);
 
         NotificationService.presentLocalNotification(
-          "📦 Nouveau Groupe !",
-          `Un groupe de ${gc.commandes?.length} commandes vous a été assigné.`
+          notif.title || "📦 Nouveau Groupe !",
+          notif.message || `Un nouveau groupe de commandes vous attend.`
         );
 
         Alert.alert(
-          "Nouveau Groupe",
-          `Un groupe de ${gc.commandes?.length} commandes vous attend.`,
+          notif.title || "Nouveau Groupe",
+          notif.message || `Un nouveau groupe de commandes vous attend.`,
           [
             { text: "Plus tard", style: "cancel" },
-            { text: "Voir", onPress: () => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: gc.id, initialData: gc }) }
+            { text: "Voir", onPress: () => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: notif.entityId }) }
           ]
         );
 
         refetchGroups();
       } else if (msg.type === 'NEW_DEMANDE') {
-        const newDmd = msg.data;
-        console.log('🚲 Nouvelle Demande reçue via WS:', newDmd.id);
-        setDemandes(prev => {
-          if (prev.some(d => d.id === newDmd.id)) return prev;
-          playNotificationSound();
-          NotificationService.presentLocalNotification(
-            "🚲 Nouvelle Demande !",
-            `Une demande de livraison de ${newDmd.nom} est disponible.`
-          );
-          Alert.alert("Nouvelle Demande", `Demande de livraison #${newDmd.id} disponible !`);
-          return [newDmd, ...prev].sort((a, b) => b.id - a.id);
-        });
+        const notif = msg.data;
+        console.log('🚲 Notification DEMANDE reçue:', notif.entityId);
+        
+        playNotificationSound();
+        NotificationService.presentLocalNotification(
+          notif.title || "🚲 Nouvelle Demande !",
+          notif.message || `Une nouvelle demande de livraison (#${notif.entityId}) est disponible.`
+        );
+        Alert.alert(notif.title || "Nouvelle Demande", notif.message || `Demande #${notif.entityId} disponible !`);
+        
+        // Refresh demandes
+        refetchDemandes();
       }
     }, userId);
 

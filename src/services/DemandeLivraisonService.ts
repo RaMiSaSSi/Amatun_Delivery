@@ -108,20 +108,26 @@ export class DemandeWebSocketService {
     });
 
     this.client.onConnect = () => {
-      // Nouvelles demandes à traiter (Ciblées par disponibilité + état online côté backend)
+      // Souscription aux notifications personnelles pour les demandes de livraison
       if (livreurId) {
-        this.client.subscribe(`/topic/livreurs/${livreurId}`, (msg) => {
-          const data = JSON.parse(msg.body);
-          // Filtrage par type pour éviter les doublons avec les commandes classiques
-          if (data.typeArticle) {
-            this.onNewDemande(data);
+        this.client.subscribe(`/topic/livreur/${livreurId}/notifications`, (msg) => {
+          const notification = JSON.parse(msg.body);
+          // Si l'entité est une demande de livraison, on la traite
+          if (notification.entityType === 'DEMANDE_LIVRAISON') {
+             // On passe l'objet de la notification ou les données extraites si nécessaire
+             // Ici on suppose que le composant attend l'objet métier, 
+             // mais avec la refonte, il recevra la Notification.
+             this.onNewDemande(notification);
           }
         });
       }
 
-      // Demandes acceptées (Global pour synchroniser les états)
-      this.client.subscribe('/topic/commande-accepted', (msg) => {
-        this.onDemandeAcceptee(JSON.parse(msg.body));
+      // Conserver une souscription broadcast si nécessaire pour d'autres types
+      this.client.subscribe('/topic/livreur/notifications', (msg) => {
+        const notification = JSON.parse(msg.body);
+        if (notification.entityType === 'DEMANDE_LIVRAISON') {
+          this.onNewDemande(notification);
+        }
       });
     };
   }
