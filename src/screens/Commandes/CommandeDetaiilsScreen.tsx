@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, StatusBar, Image, Linking, Platform, Dimensions, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StatusBar, Image, Linking, Platform, Dimensions, Modal, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LivreurService, BASE_URL } from '../../services/LivreurService';
@@ -176,6 +177,10 @@ export default function CommandeDetailsScreen() {
 
         // Fallback for text address
         const query = encodeURIComponent(address);
+        if (!query) {
+            Alert.alert("Erreur", "Adresse manquante ou invalide.");
+            return;
+        }
         const webUrl = `https://www.google.com/maps/search/?api=1&query=${query}`;
         Linking.openURL(webUrl);
     };
@@ -280,8 +285,8 @@ export default function CommandeDetailsScreen() {
     const isMine = commande.livreurId === userId;
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
             {/* Header */}
             <View style={styles.header}>
@@ -368,7 +373,9 @@ export default function CommandeDetailsScreen() {
                         <View style={styles.stepContent}>
                             <Text style={[styles.stepTag, { color: '#10b981' }]}>DESTINATION CLIENT</Text>
                             <Text style={styles.personName}>{commande.nom} {commande.prenom}</Text>
-                            <Text style={styles.addressLine}>{commande.adresse?.rue}, {commande.adresse?.delegation}</Text>
+                            <Text style={styles.addressLine}>
+                                {commande.adresse?.rue || 'Adresse non spécifiée'}, {commande.adresse?.delegation || ''}
+                            </Text>
                             {distances.toClient > 0 && (
                                 <Text style={styles.cityLine}>{distances.toClient.toFixed(1)} km du dernier point</Text>
                             )}
@@ -378,7 +385,18 @@ export default function CommandeDetailsScreen() {
                                     <Ionicons name="call" size={14} color="#10b981" />
                                     <Text style={[styles.miniBtnText, { color: '#10b981' }]}>Appeler</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity style={styles.miniBtn} onPress={() => openMap(`${commande.adresse?.rue}, ${commande.adresse?.delegation}`, commande.adresse?.latitude, commande.adresse?.longitude)}>
+                                <TouchableOpacity 
+                                    style={styles.miniBtn} 
+                                    onPress={() => {
+                                        const addr = commande.adresse;
+                                        const addrStr = addr ? `${addr.rue || ''}, ${addr.delegation || ''}` : '';
+                                        if (!addr?.latitude || !addr?.longitude) {
+                                            Alert.alert("Erreur", "Coordonnées de destination indisponibles.");
+                                            return;
+                                        }
+                                        openMap(addrStr, addr.latitude, addr.longitude);
+                                    }}
+                                >
                                     <Ionicons name="location" size={14} color="#10b981" />
                                     <Text style={[styles.miniBtnText, { color: '#10b981' }]}>Y aller</Text>
                                 </TouchableOpacity>
@@ -593,18 +611,18 @@ const styles = StyleSheet.create({
     centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
 
     header: {
-        backgroundColor: '#ffffff',
+        backgroundColor: '#f8fafc',
         paddingHorizontal: 20,
-        paddingVertical: 15,
+        paddingTop: 10,
+        paddingBottom: 15,
         flexDirection: 'row',
         alignItems: 'center',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
+        zIndex: 10,
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
-        shadowRadius: 10
+        shadowRadius: 3
     },
     backBtnWrapper: {
         width: 44,

@@ -19,6 +19,8 @@ import { Statut, Commande } from '../Types/types';
 import { StatutDemande } from '../Types/DemandeLivraison';
 import { AppState, AppStateStatus } from 'react-native';
 import { NotificationService } from '../services/NotificationService';
+import { calculateDemandeRevenue, calculateDriverRevenue } from '../utils/revenueCalculator';
+import { MoyenTransport } from '../Types/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -82,12 +84,40 @@ export default function HomeScreen() {
 
             // Compute Earnings (only for today's deliveries)
             const todaysDeliveries = (Array.isArray(cmdData) ? cmdData : []).filter((c: Commande) => c.livreurId === userId && c.statut === Statut.DELIVERED);
-            const totalEarnings = todaysDeliveries.reduce((sum: number, c: Commande) => {
-                const deliveryPrc = c.prixTotalAvecLivraison && c.prixTotalSansLivraison ? (c.prixTotalAvecLivraison - c.prixTotalSansLivraison) : 0;
-                return sum + deliveryPrc;
-            }, 0);
-            setDailyEarnings(totalEarnings);
-            setDailyDeliveriesCount(todaysDeliveries.length);
+            
+            // Get today's delivered demandes
+            let todaysDemandes: any[] = [];
+            try {
+                const mesDmds = await DemandeLivraisonService.getMesLivraisons(userId).catch(() => []);
+                todaysDemandes = mesDmds.filter((d: any) => {
+                    const dDate = new Date(d.dateLivraison).toISOString().split('T')[0];
+                    return dDate === today && d.statut === StatutDemande.LIVREE;
+                });
+            } catch (e) { }
+
+            const info = await LivreurService.getLivreurInfos(userId);
+            setLivreurInfo(info);
+            setIsOnline(info.online);
+            const transportMode = info.moyen as MoyenTransport;
+
+            // Calculate total earnings for today
+            let totalEarned = 0;
+            
+            // Calculate for single orders
+            for (const c of todaysDeliveries) {
+                // We use calculateDriverRevenue which respects the transport mode logic
+                const rev = await calculateDriverRevenue(c, transportMode).catch(() => 0);
+                totalEarned += rev;
+            }
+
+            // Calculate for demandes
+            for (const d of todaysDemandes) {
+                const rev = calculateDemandeRevenue(d, transportMode);
+                totalEarned += rev;
+            }
+
+            setDailyEarnings(totalEarned);
+            setDailyDeliveriesCount(todaysDeliveries.length + todaysDemandes.length);
 
             // Fetch Demandes sequentially
             let dmdData: any[] = [];
@@ -167,9 +197,10 @@ export default function HomeScreen() {
             }
             setConfirmedLast3Days(totalConfirmed);
 
-            const info = await LivreurService.getLivreurInfos(userId);
-            setLivreurInfo(info);
-            setIsOnline(info.online);
+            // Info already fetched above for transport mode
+            // const info = await LivreurService.getLivreurInfos(userId);
+            // setLivreurInfo(info);
+            // setIsOnline(info.online);
         } catch (e) { console.error(e); }
     };
 
@@ -333,35 +364,6 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* ONGOING DELIVERIES LIST (New) */}
-                {ongoingDeliveries && ongoingDeliveries.length > 0 && (
-                    <View style={{ marginBottom: 20 }}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>VOS COURSES ACCEPTÉES</Text>
-                        </View>
-                        {ongoingDeliveries.map((item: any, index: number) => (
-                            <View key={index} style={styles.ongoingItemCard}>
-                                <View style={styles.ongoingItemHeader}>
-                                    <View style={[styles.cardIconBox, { backgroundColor: '#e0f2fe' }]}>
-                                        <ClipboardList size={22} color="#0369a1" />
-                                    </View>
-                                    <View style={{ flex: 1, marginLeft: 12 }}>
-                                        <Text style={styles.ongoingItemTitle}>Commande #{item.id}</Text>
-                                        <Text style={styles.ongoingItemSubtitle} numberOfLines={1}>
-                                            {item.adresse?.rue || item.adresse?.gouvernerat || 'En cours...'}
-                                        </Text>
-                                    </View>
-                                    <TouchableOpacity
-                                        style={styles.viewDetailBtn}
-                                        onPress={() => navigation.navigate('CommandeDetails', { commandeId: item.id })}
-                                    >
-                                        <Text style={styles.viewDetailText}>Voir Détails</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
-                )}
 
                 {/* HISTORIQUE CARD */}
                 <TouchableOpacity

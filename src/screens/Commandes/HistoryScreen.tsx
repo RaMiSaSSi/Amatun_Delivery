@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, SafeAreaView, StatusBar, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, StatusBar, ActivityIndicator, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LivreurService } from '../../services/LivreurService';
@@ -246,8 +247,8 @@ export default function HistoryScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <SafeAreaView style={styles.container} edges={['top']}>
+            <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
             {/* Header */}
             <View style={styles.header}>
@@ -335,25 +336,30 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#ffffff' },
     header: {
-        backgroundColor: '#ffffff',
+        backgroundColor: '#f8fafc',
         paddingHorizontal: 20,
-        paddingVertical: 15,
+        paddingTop: 10,
+        paddingBottom: 15,
         flexDirection: 'row',
         alignItems: 'center',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9'
+        zIndex: 10,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3
     },
     backBtnWrapper: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: '#f8fafc',
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: '#f1f5f9',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 15
     },
-    headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
-    headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500' },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+    headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500', marginTop: 1 },
 
     filterWrapper: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
     segmentControl: {

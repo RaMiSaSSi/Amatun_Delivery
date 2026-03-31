@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
-  StatusBar, AppState, AppStateStatus, ActivityIndicator, Image
+  StatusBar, AppState, AppStateStatus, ActivityIndicator, Image, ScrollView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,10 +21,6 @@ import { useGrandeCommande } from '../../hooks/useGrandeCommande';
 import { useHaptics } from '../../hooks/useHaptics';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-
-import { useDemandes } from '../../hooks/useDemandes';
-import { calculateDemandeRevenue } from '../../utils/revenueCalculator';
-import { DemandeLivraison, StatutDemande } from '../../Types/DemandeLivraison';
 
 
 
@@ -57,26 +53,12 @@ export default function LivreurDashboard() {
     isAccepting: isAcceptingGroup
   } = useGrandeCommande(activeTab === 'GROUPS');
 
-  const {
-    demandes: remoteDemandes,
-    isLoading: isLoadingDemandes,
-    isRefetching: isRefetchingDemandes,
-    refetch: refetchDemandes,
-    accept: acceptDemande,
-    updateStatut: updateStatutDemande
-  } = useDemandes(activeTab === 'SINGLE');
-
   // Local state for real-time responsiveness
   const [commandes, setCommandes] = useState<Commande[]>([]);
-  const [demandes, setDemandes] = useState<DemandeLivraison[]>([]);
 
   useEffect(() => {
     if (remoteCommandes) setCommandes(remoteCommandes);
   }, [remoteCommandes]);
-
-  useEffect(() => {
-    if (remoteDemandes) setDemandes(remoteDemandes);
-  }, [remoteDemandes]);
 
   const player = useAudioPlayer(require('../../../assets/Notification.mp3'));
 
@@ -199,19 +181,6 @@ export default function LivreurDashboard() {
         );
 
         refetchGroups();
-      } else if (msg.type === 'NEW_DEMANDE') {
-        const newDmd = msg.data;
-        console.log('🚲 Nouvelle Demande reçue via WS:', newDmd.id);
-        setDemandes(prev => {
-          if (prev.some(d => d.id === newDmd.id)) return prev;
-          playNotificationSound();
-          NotificationService.presentLocalNotification(
-            "🚲 Nouvelle Demande !",
-            `Une demande de livraison de ${newDmd.nom} est disponible.`
-          );
-          Alert.alert("Nouvelle Demande", `Demande de livraison #${newDmd.id} disponible !`);
-          return [newDmd, ...prev].sort((a, b) => b.id - a.id);
-        });
       }
     }, userId);
 
@@ -246,50 +215,12 @@ export default function LivreurDashboard() {
     }
   };
 
-  const handleAcceptDemande = async (dmd: DemandeLivraison) => {
-    if (!userId) return;
-
-    if (isBlockedForSingle({ ...dmd, uiType: 'DEMANDE' })) {
-      hapticNotification(Haptics.NotificationFeedbackType.Warning);
-      const fee = calculateDemandeRevenue(dmd, profile?.moyen);
-      Alert.alert(
-        "Plafond atteint",
-        `En acceptant cette demande (+${fee} TND de frais), vous dépasserez votre plafond de cash autorisé. Veuillez verser l'argent encaissé pour continuer.`,
-        [{ text: "Compris" }]
-      );
-      return;
-    }
-
-    try {
-      impact(Haptics.ImpactFeedbackStyle.Heavy);
-      await acceptDemande(dmd.id);
-      Alert.alert('Succès', 'Demande de livraison acceptée !');
-      navigation.navigate('DemandeDetail', { demandeId: dmd.id });
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible d\'accepter la demande');
-    }
-  };
-
-  const handleStatutChangeDemande = async (dmd: DemandeLivraison, newStatut: StatutDemande) => {
-    impact(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await updateStatutDemande({ demandeId: dmd.id, statut: newStatut });
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Erreur', 'Mise à jour échouée');
-    }
-  };
 
 
 
-  const isBlockedForSingle = (item: any) => {
+  const isBlockedForSingle = (cmd: Commande) => {
     if (!profile) return false;
-    let fee = 0;
-    if (item.uiType === 'COMMANDE') {
-      fee = getDeliveryFee(item);
-    } else {
-      fee = calculateDemandeRevenue(item, profile.moyen);
-    }
+    const fee = getDeliveryFee(cmd);
     const balance = profile.cashbalance || 0;
     const limit = (profile.plafond || 0) + 10;
     return balance + fee >= limit;
@@ -298,7 +229,7 @@ export default function LivreurDashboard() {
   const handleAccept = async (cmd: Commande) => {
     if (!userId) return;
 
-    if (isBlockedForSingle({ ...cmd, uiType: 'COMMANDE' })) {
+    if (isBlockedForSingle(cmd)) {
       hapticNotification(Haptics.NotificationFeedbackType.Warning);
       const fee = getDeliveryFee(cmd);
       Alert.alert(
@@ -448,37 +379,19 @@ export default function LivreurDashboard() {
     );
   };
 
-  // Filtrage pour ne montrer que:
-  // 1. Les commandes/demandes CONFIRMED (disponibles pour tous)
-  // 2. Celles qui ME sont assignées (ACCEPTED, SHIPPED, DELIVERED...)
   const mergedItems = useMemo(() => {
-    const combined: any[] = [
-      ...commandes.map(c => ({ ...c, uiType: 'COMMANDE' as const })),
-      ...demandes.map(d => ({ ...d, uiType: 'DEMANDE' as const }))
-    ];
-
-    return combined.filter(item => {
+    return commandes.filter(item => {
       if (ignoredOrderIds.includes(item.id)) return false;
 
-      const isCommande = item.uiType === 'COMMANDE';
-      const status = item.statut;
-      const livreurId = item.livreurId;
-
-      if (isCommande) {
-        if (status === Statut.CONFIRMED) return true;
-        if (livreurId === userId) return true;
-      } else {
-        // DEMANDE
-        if (status === StatutDemande.CONFIRMEE) return true;
-        if (livreurId === userId) return true;
-      }
+      if (item.statut === Statut.CONFIRMED) return true;
+      if (item.livreurId === userId) return true;
       return false;
     }).sort((a, b) => {
-      const dateA = new Date(a.date || a.createdAt).getTime();
-      const dateB = new Date(b.date || b.createdAt).getTime();
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
       return dateB - dateA;
     });
-  }, [commandes, demandes, userId, ignoredOrderIds]);
+  }, [commandes, userId, ignoredOrderIds]);
 
   const dates = useMemo(() => {
     const list = [];
@@ -496,12 +409,12 @@ export default function LivreurDashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtnWrapper}>
             <Ionicons name="chevron-back" size={24} color="#1e293b" />
           </TouchableOpacity>
           <View>
@@ -511,323 +424,261 @@ export default function LivreurDashboard() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity onPress={logout} style={styles.logoutHeaderBtn}>
-          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+        <TouchableOpacity onPress={logout} style={styles.iconBtn}>
+          <Ionicons name="log-out" size={22} color="#ef4444" />
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'SINGLE' && styles.tabBtnActive]}
-          onPress={() => { impact(Haptics.ImpactFeedbackStyle.Light); setActiveTab('SINGLE'); }}
-        >
-          <Ionicons name="cube-outline" size={18} color={activeTab === 'SINGLE' ? '#10b981' : '#64748b'} />
-          <Text style={[styles.tabBtnText, activeTab === 'SINGLE' && styles.tabBtnTextActive]}>Individuelles</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'GROUPS' && styles.tabBtnActive]}
-          onPress={() => { impact(Haptics.ImpactFeedbackStyle.Light); setActiveTab('GROUPS'); }}
-        >
-          <Ionicons name="layers-outline" size={18} color={activeTab === 'GROUPS' ? '#10b981' : '#64748b'} />
-          <Text style={[styles.tabBtnText, activeTab === 'GROUPS' && styles.tabBtnTextActive]}>Groupées</Text>
-          {grandesCommandes.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{grandesCommandes.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Date filter container (only for single orders) */}
-      {activeTab === 'SINGLE' && (
-        <View style={styles.dateFilterOuter}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={dates}
-            keyExtractor={(item) => item.full}
-            contentContainerStyle={styles.dateList}
-            renderItem={({ item }) => {
-              const isSelected = item.full === selectedDate;
-              const isToday = item.full === new Date().toISOString().split('T')[0];
-
-              return (
-                <TouchableOpacity
-                  onPress={() => setSelectedDate(item.full)}
-                  style={[
-                    styles.dateBtn,
-                    isSelected && styles.dateBtnSelected,
-                  ]}
-                >
-                  <Text style={[styles.dateDayName, isSelected && styles.dateTextSelected]}>
-                    {item.dayName.toUpperCase()}
-                  </Text>
-                  <Text style={[styles.dateDayNum, isSelected && styles.dateTextSelected]}>
-                    {item.dayNum}
-                  </Text>
-                  {dayCounts[item.full] > 0 && (
-                    <View style={[styles.miniBadgeBubble, isSelected ? { backgroundColor: '#ffffff' } : { backgroundColor: '#10b981' }]}>
-                      <Text style={[styles.miniBadgeText, isSelected && { color: '#10b981' }]}>
-                        {dayCounts[item.full]}
-                      </Text>
-                    </View>
-                  )}
-                  {isToday && !isSelected && <View style={styles.todayDotIndicator} />}
-                </TouchableOpacity>
-              );
-            }}
-          />
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        {/* Tabs */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'SINGLE' && styles.tabBtnActive]}
+            onPress={() => { impact(Haptics.ImpactFeedbackStyle.Light); setActiveTab('SINGLE'); }}
+          >
+            <Ionicons name="cube" size={18} color={activeTab === 'SINGLE' ? '#10b981' : '#94a3b8'} />
+            <Text style={[styles.tabBtnText, activeTab === 'SINGLE' && styles.tabBtnTextActive]}>Individuelles</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'GROUPS' && styles.tabBtnActive]}
+            onPress={() => { impact(Haptics.ImpactFeedbackStyle.Light); setActiveTab('GROUPS'); }}
+          >
+            <Ionicons name="layers" size={18} color={activeTab === 'GROUPS' ? '#10b981' : '#94a3b8'} />
+            <Text style={[styles.tabBtnText, activeTab === 'GROUPS' && styles.tabBtnTextActive]}>Groupées</Text>
+            {grandesCommandes.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{grandesCommandes.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Blocked Warning Banner */}
-      {isBlockedByTotal && (
-        <View style={styles.blockedBanner}>
-          <View style={styles.blockedBannerIcon}>
-            <Ionicons name="alert-circle" size={24} color="#ef4444" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.blockedBannerText}>Plafond dépassé</Text>
-            <Text style={styles.blockedBannerSub}>Versez votre solde cash ({profile?.cashbalance} TND) pour continuer.</Text>
-          </View>
-        </View>
-      )}
+        {/* Date filter container (only for single orders) */}
+        {activeTab === 'SINGLE' && (
+          <View style={styles.dateFilterOuter}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={dates}
+              keyExtractor={(item) => item.full}
+              contentContainerStyle={styles.dateList}
+              renderItem={({ item }) => {
+                const isSelected = item.full === selectedDate;
+                const isToday = item.full === new Date().toISOString().split('T')[0];
 
-      {/* List */}
-      {(isLoading || isLoadingGroups) && !isRefetching ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#10b981" />
-          <Text style={styles.loadingText}>Mise à jour...</Text>
-        </View>
-      ) : activeTab === 'SINGLE' ? (
-        <FlatList
-          data={mergedItems}
-          renderItem={({ item }) => {
-            const isCommande = item.uiType === 'COMMANDE';
-            const isAssignedToMe = item.livreurId === userId;
-
-            // Logic for revenue
-            let revenue = 0;
-            if (isCommande) {
-              revenue = item.prixTotalAvecLivraison;
-            } else {
-              revenue = calculateDemandeRevenue(item, profile?.moyen);
-            }
-
-            // Statut translation and styling
-            let badgeStyle = styles.badgeDefault;
-            let textStyle = styles.badgeTextDefault;
-            let displayStatut = "";
-
-            if (isCommande) {
-              displayStatut = translateStatut(item.statut);
-              if (item.statut === Statut.CONFIRMED || item.statut === Statut.EN_COURS_DE_RETOUR) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
-              else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
-              else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
-              else if (item.statut === Statut.EN_COURS_D_ECHANGE) { badgeStyle = styles.badgeIndigo; textStyle = { color: '#3730a3' } }
-            } else {
-              displayStatut = translateStatutDemande(item.statut);
-              if (item.statut === StatutDemande.CONFIRMEE) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
-              else if (item.statut === StatutDemande.EN_COURS) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
-              else if (item.statut === StatutDemande.LIVREE) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
-            }
-
-            return (
-              <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.9}
-                onPress={() => {
-                  if (isCommande) {
-                    navigation.navigate('CommandeDetails', { commandeId: item.id });
-                  } else {
-                    navigation.navigate('DemandeDetail', { demandeId: item.id });
-                  }
-                }}
-              >
-                {/* Header Carte */}
-                <View style={styles.cardHeader}>
-                  <View style={[styles.iconContainer, !isCommande && { backgroundColor: '#dbeafe' }]}>
-                    <Ionicons name={isCommande ? "cube-outline" : "bicycle-outline"} size={20} color={isCommande ? "#059669" : "#2563eb"} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.orderId}>{isCommande ? 'C' : 'D'}#{item.id}</Text>
-                    {item.livreurId ? (
-                      <Text style={styles.assignedTo}>
-                        Assigné à: {isAssignedToMe ? 'Moi' : `Livreur ${item.livreurId}`}
-                      </Text>
-                    ) : (
-                      <Text style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>En attente d'acceptation</Text>
-                    )}
-                  </View>
-                  <View style={[styles.badge, badgeStyle]}>
-                    <Text style={[styles.badgeText, textStyle]}>{displayStatut}</Text>
-                  </View>
-                </View>
-
-                {/* Info Client */}
-                <View style={styles.cardBody}>
-                  <View style={styles.row}>
-                    <Ionicons name="person-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>{isCommande ? `${item.nom} ${item.prenom}` : `${item.nomDestinataire} ${item.prenomDestinataire}`}</Text>
-                  </View>
-                  <View style={styles.row}>
-                    <Ionicons name="location-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>
-                      {isCommande
-                        ? `${item.adresse?.rue}, ${item.adresse?.delegation}`
-                        : `${item.adresseCourteDestinataire}, ${item.villeDestinataire}`}
+                return (
+                  <TouchableOpacity
+                    onPress={() => setSelectedDate(item.full)}
+                    style={[
+                      styles.dateBtn,
+                      isSelected && styles.dateBtnSelected,
+                    ]}
+                  >
+                    <Text style={[styles.dateDayName, isSelected && styles.dateTextSelected]}>
+                      {item.dayName.toUpperCase()}
                     </Text>
-                  </View>
-                  <View style={styles.row}>
-                    <Ionicons name="call-outline" size={14} color="gray" />
-                    <Text style={styles.infoText}>{isCommande ? item.numTel : item.telephoneDestinataire}</Text>
-                  </View>
-                  <View style={styles.totalRow}>
-                    <Text style={styles.itemCount}>{isCommande ? `${item.produits?.length || 0} articles` : item.typeArticle}</Text>
-                    <Text style={styles.totalPrice}>{revenue} TND</Text>
-                  </View>
-                </View>
+                    <Text style={[styles.dateDayNum, isSelected && styles.dateTextSelected]}>
+                      {item.dayNum}
+                    </Text>
+                    {dayCounts[item.full] > 0 && (
+                      <View style={[styles.miniBadgeBubble, isSelected ? { backgroundColor: '#ffffff' } : { backgroundColor: '#10b981' }]}>
+                        <Text style={[styles.miniBadgeText, isSelected && { color: '#10b981' }]}>
+                          {dayCounts[item.full]}
+                        </Text>
+                      </View>
+                    )}
+                    {isToday && !isSelected && <View style={styles.todayDotIndicator} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        )}
 
-                {/* Actions */}
-                <View style={styles.cardFooter}>
-                  {/* Bouton Accepter / Ignorer */}
-                  {((isCommande ? item.statut === Statut.CONFIRMED : item.statut === StatutDemande.CONFIRMEE) && !isAssignedToMe) && (
-                    <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity onPress={() => handleIgnore(item.id)} style={styles.btnIgnore}>
-                        <Text style={styles.btnTextIgnore}>Ignorer</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => isCommande ? handleAccept(item) : handleAcceptDemande(item)}
-                        style={[styles.btnPrimary, isBlockedForSingle(item) && styles.btnDisabled]}
-                        disabled={isBlockedForSingle(item)}
-                      >
-                        <Text style={styles.btnTextPrimary}>{isBlockedForSingle(item) ? 'Bloqué' : 'Accepter'}</Text>
-                      </TouchableOpacity>
+        {/* Blocked Warning Banner */}
+        {isBlockedByTotal && (
+          <View style={styles.blockedBanner}>
+            <View style={styles.blockedBannerIcon}>
+              <Ionicons name="alert-circle" size={24} color="#ef4444" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.blockedBannerText}>Plafond dépassé</Text>
+              <Text style={styles.blockedBannerSub}>Versez votre solde ({profile?.cashbalance} TND) pour continuer.</Text>
+            </View>
+          </View>
+        )}
+
+        {/* List */}
+        {(isLoading || isLoadingGroups) && !isRefetching ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#10b981" />
+            <Text style={styles.loadingText}>Chargement...</Text>
+          </View>
+        ) : activeTab === 'SINGLE' ? (
+          <View style={styles.listContent}>
+            {mergedItems.length === 0 ? (
+              <View style={styles.emptyContent}>
+                <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
+                <Text style={styles.emptyLabelText}>Aucune livraison</Text>
+                <Text style={styles.emptySubLabelText}>Il n'y a pas de livraisons pour cette date.</Text>
+              </View>
+            ) : (
+              mergedItems.map((item) => {
+                const isAssignedToMe = item.livreurId === userId;
+                let revenue = item.prixTotalAvecLivraison;
+                let badgeStyle = styles.badgeDefault;
+                let textStyle = styles.badgeTextDefault;
+                let displayStatut = translateStatut(item.statut);
+
+                if (item.statut === Statut.CONFIRMED || item.statut === Statut.EN_COURS_DE_RETOUR) { badgeStyle = styles.badgePurple; textStyle = { color: '#6b21a8' } }
+                else if (item.statut === Statut.SHIPPED) { badgeStyle = styles.badgeOrange; textStyle = { color: '#9a3412' } }
+                else if (item.statut === Statut.DELIVERED) { badgeStyle = styles.badgeEmerald; textStyle = { color: '#065f46' } }
+                else if (item.statut === Statut.EN_COURS_D_ECHANGE) { badgeStyle = styles.badgeIndigo; textStyle = { color: '#3730a3' } }
+
+                return (
+                  <TouchableOpacity
+                    key={`COMMANDE-${item.id}`}
+                    style={styles.card}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      navigation.navigate('CommandeDetails', { commandeId: item.id });
+                    }}
+                  >
+                    <View style={styles.cardHeader}>
+                      <View style={[styles.cardIconBox, { backgroundColor: '#ecfdf5' }]}>
+                        <Ionicons name="cube" size={20} color="#059669" />
+                      </View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.orderId}>CMD #{item.id}</Text>
+                        <Text style={styles.assignedTo} numberOfLines={1}>
+                          {item.nom} {item.prenom}
+                        </Text>
+                      </View>
+                      <View style={[styles.badge, badgeStyle]}>
+                        <Text style={[styles.badgeText, textStyle]}>{displayStatut.toUpperCase()}</Text>
+                      </View>
                     </View>
-                  )}
 
-                  {/* Actions si assigné à MOI */}
-                  {isAssignedToMe && (
-                    <>
-                      {((isCommande && item.statut === Statut.ACCEPTED) || (!isCommande && item.statut === StatutDemande.ACCEPTEE)) && (
+                    <View style={styles.cardBody}>
+                      <View style={styles.row}>
+                        <Ionicons name="location" size={14} color="#64748b" />
+                        <Text style={styles.infoText} numberOfLines={1}>
+                          {item.adresse?.rue}, {item.adresse?.delegation}
+                        </Text>
+                      </View>
+                      <View style={styles.totalRow}>
+                        <View style={styles.priceTag}>
+                          <Text style={styles.priceTagText}>{revenue?.toFixed(2)} TND</Text>
+                        </View>
+                        <Text style={styles.itemCount}>{item.produits?.length || 0} articles</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardFooter}>
+                      {(item.statut === Statut.CONFIRMED && !isAssignedToMe) ? (
+                        <View style={styles.dualActions}>
+                          <TouchableOpacity onPress={() => handleIgnore(item.id)} style={styles.btnIgnore}>
+                            <Text style={styles.btnTextIgnore}>Ignorer</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleAccept(item)}
+                            style={[styles.btnPrimary, isBlockedForSingle(item) && styles.btnDisabled]}
+                            disabled={isBlockedForSingle(item)}
+                          >
+                            <Text style={styles.btnTextPrimary}>{isBlockedForSingle(item) ? 'Bloqué' : 'Accepter'}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : isAssignedToMe && (
+                        <View style={{ width: '100%' }}>
+                          {(item.statut === Statut.ACCEPTED) && (
+                            <TouchableOpacity
+                              onPress={() => handleStatutChange(item, Statut.SHIPPED)}
+                              style={styles.primaryActionButton}
+                            >
+                              <Text style={styles.primaryActionButtonText}>Lancer la Livraison</Text>
+                            </TouchableOpacity>
+                          )}
+                          {(item.statut === Statut.SHIPPED) && (
+                            <TouchableOpacity
+                              onPress={() => handleStatutChange(item, Statut.DELIVERED)}
+                              style={[styles.primaryActionButton, { backgroundColor: '#10b981' }]}
+                            >
+                              <Text style={styles.primaryActionButtonText}>Marquer comme Livré</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+        ) : (
+          <View style={styles.listContent}>
+            {grandesCommandes.length === 0 ? (
+              <View style={styles.emptyContent}>
+                <Ionicons name="layers-outline" size={64} color="#cbd5e1" />
+                <Text style={styles.emptyLabelText}>Aucun groupe</Text>
+                <Text style={styles.emptySubLabelText}>Aucun groupe de livraison disponible.</Text>
+              </View>
+            ) : (
+              grandesCommandes.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.card}
+                  activeOpacity={0.9}
+                  onPress={() => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: item.id, initialData: item })}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.cardIconBox, { backgroundColor: '#ecfdf5' }]}>
+                      <Ionicons name="layers" size={20} color="#10b981" />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.orderId}>Groupe {item.code}</Text>
+                      <Text style={styles.assignedTo}>{item.commandes?.length || 0} commandes groupées</Text>
+                    </View>
+                    <View style={[styles.badge, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? styles.badgeEmerald : styles.badgeDefault]}>
+                      <Text style={[styles.badgeText, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? { color: '#065f46' } : { color: '#64748b' }]}>
+                        {translateStatut(item.statut as Statut).toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.totalRow}>
+                    <View style={[styles.priceTag, profile?.moyen === MoyenTransport.MOTO && { backgroundColor: '#fffbeb' }]}>
+                      <Text style={[styles.priceTagText, profile?.moyen === MoyenTransport.MOTO && { color: '#d97706' }]}>
+                        {profile?.moyen === MoyenTransport.MOTO
+                          ? `${(item.commandes?.length || 0) * 5} TND`
+                          : `${item.totalPrixLivraison} TND`}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                      {(item.statut === 'PENDING' || item.statut === 'CONFIRMED') && !item.livreurId ? (
                         <TouchableOpacity
-                          onPress={() => isCommande ? handleStatutChange(item, Statut.SHIPPED) : handleStatutChangeDemande(item, StatutDemande.EN_COURS)}
-                          style={styles.btnOrange}
+                          style={styles.viewDetailBtn}
+                          onPress={() => handleAcceptGroup(item)}
+                          disabled={isBlockingForGroupSelection(item)}
                         >
-                          <Text style={styles.btnTextWhite}>Commencer Livraison</Text>
+                          <Text style={styles.viewDetailText}>Accepter</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.viewDetailBtn}
+                          onPress={() => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: item.id, initialData: item })}
+                        >
+                          <Text style={styles.viewDetailText}>Voir Détails</Text>
                         </TouchableOpacity>
                       )}
-                      {((isCommande && item.statut === Statut.SHIPPED) || (!isCommande && item.statut === StatutDemande.EN_COURS)) && (
-                        <TouchableOpacity
-                          onPress={() => isCommande ? handleStatutChange(item, Statut.DELIVERED) : handleStatutChangeDemande(item, StatutDemande.LIVREE)}
-                          style={styles.btnSuccess}
-                        >
-                          <Text style={styles.btnTextWhite}>Livré</Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-          keyExtractor={(item) => `${item.uiType}-${item.id}`}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching || isRefetchingDemandes}
-              onRefresh={() => {
-                refetchCommandes();
-                refetchDemandes();
-                refetchGroups();
-                refreshProfile();
-                fetchDayCounts();
-              }}
-              colors={['#10b981']}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContent}>
-              <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
-              <Text style={styles.emptyLabelText}>Aucune livraison</Text>
-              <Text style={styles.emptySubLabelText}>Il n'y a pas de livraisons prévues pour cette date.</Text>
-            </View>
-          }
-        />
-      ) : (
-        <FlatList
-          data={grandesCommandes}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.groupCard}
-              activeOpacity={0.9}
-              onPress={() => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: item.id, initialData: item })}
-            >
-              <View style={styles.groupCardHeader}>
-                <View style={[styles.iconContainer, { backgroundColor: '#ecfdf5' }]}>
-                  <Ionicons name="layers-outline" size={20} color="#10b981" />
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.orderId}>{item.code}</Text>
-                  <Text style={styles.groupSubText}>{item.commandes?.length || 0} commandes groupées</Text>
-                </View>
-                <View style={[styles.badge, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? styles.badgeEmerald : styles.badgeDefault]}>
-                  <Text style={[styles.badgeText, (item.statut === Statut.ACCEPTED || item.statut === Statut.CONFIRMED) ? { color: '#065f46' } : { color: '#64748b' }]}>
-                    {item.statut === Statut.ACCEPTED ? 'Accepté' : (item.statut === Statut.CONFIRMED ? 'Disponible' : 'En attente')}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.groupCardFooter}>
-                <View style={[styles.priceTag, profile?.moyen === MoyenTransport.MOTO && { backgroundColor: '#fef3c7' }]}>
-                  <Text style={[styles.priceTagText, profile?.moyen === MoyenTransport.MOTO && { color: '#d97706' }]}>
-                    {profile?.moyen === MoyenTransport.MOTO
-                      ? `${(item.commandes?.length || 0) * 5} TND`
-                      : `${item.totalPrixLivraison} TND`}
-                  </Text>
-                </View>
-                {(item.statut === 'PENDING' || item.statut === 'CONFIRMED') && !item.livreurId ? (
-                  <TouchableOpacity
-                    style={styles.btnGroupAccept}
-                    onPress={() => handleAcceptGroup(item)}
-                    disabled={isBlockingForGroupSelection(item)}
-                  >
-                    <Text style={styles.btnTextWhite}>Accepter le Groupe</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.btnGroupView}
-                    onPress={() => navigation.navigate('GrandeCommandeDetail', { grandeCommandeId: item.id, initialData: item })}
-                  >
-                    <Text style={styles.btnTextPrimary}>Détails du Groupe</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={() => {
-                refetchCommandes();
-                refetchGroups();
-                refreshProfile();
-              }}
-              colors={['#10b981']}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContent}>
-              <Ionicons name="layers-outline" size={64} color="#cbd5e1" />
-              <Text style={styles.emptyLabelText}>Aucun groupe</Text>
-              <Text style={styles.emptySubLabelText}>Aucun bundle de commandes groupées n'est disponible.</Text>
-            </View>
-          }
-        />
-      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -835,46 +686,88 @@ export default function LivreurDashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8fafc',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingTop: 10,
+    paddingBottom: 15,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9'
+    justifyContent: 'space-between',
+    zIndex: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3
   },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 15 },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  backBtnWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center'
   },
-  headerTitleText: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
-  headerSubtitleText: { fontSize: 13, color: '#64748b' },
-  logoutHeaderBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#fff1f2',
+  headerTitleText: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+  headerSubtitleText: { fontSize: 13, color: '#64748b', fontWeight: '600', marginTop: 1 },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'white',
     justifyContent: 'center',
-    alignItems: 'center'
-  },
-
-  dateFilterOuter: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 15,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    elevation: 3,
+    alignItems: 'center',
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 5,
-    marginBottom: 10
+    shadowRadius: 4,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    padding: 15,
+    paddingBottom: 5,
+    gap: 12
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9'
+  },
+  tabBtnActive: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#10b981'
+  },
+  tabBtnText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  tabBtnTextActive: { color: '#059669' },
+  tabBadge: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 4
+  },
+  tabBadgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  dateFilterOuter: {
+    backgroundColor: 'white',
+    paddingVertical: 15,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    elevation: 4,
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10
   },
   dateList: { paddingHorizontal: 20, gap: 12 },
   dateBtn: {
@@ -898,21 +791,7 @@ const styles = StyleSheet.create({
   },
   dateDayName: { fontSize: 10, color: '#94a3b8', fontWeight: 'bold', marginBottom: 4 },
   dateDayNum: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
-  dateTextSelected: { color: '#ffffff' },
-  miniBadgeBubble: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: '#ffffff'
-  },
-  miniBadgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  dateTextSelected: { color: 'white' },
   todayDotIndicator: {
     width: 4,
     height: 4,
@@ -920,250 +799,143 @@ const styles = StyleSheet.create({
     backgroundColor: '#10b981',
     marginTop: 4
   },
-
-  blockedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 12,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    gap: 12
-  },
-  blockedBannerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  blockedBannerText: { fontSize: 14, fontWeight: 'bold', color: '#991b1b' },
-  blockedBannerSub: { fontSize: 12, color: '#b91c1c', marginTop: 2 },
-
-  listContent: { padding: 16, paddingBottom: 40 },
+  listContent: { padding: 20, paddingTop: 10 },
   card: {
     backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
-    overflow: 'hidden',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
     elevation: 4,
     shadowColor: '#64748b',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
     shadowRadius: 10,
     borderWidth: 1,
     borderColor: '#f1f5f9'
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc'
-  },
-  iconContainer: {
-    width: 42,
-    height: 42,
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  cardIconBox: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    backgroundColor: '#f0fdf4',
     justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden'
+    alignItems: 'center'
   },
-  dashIconImg: {
-    width: 24,
-    height: 24,
-    resizeMode: 'contain'
-  },
-  orderId: { fontWeight: 'bold', fontSize: 17, color: '#1e293b' },
-  assignedTo: { fontSize: 11, color: '#10b981', marginTop: 2, fontWeight: '500' },
-
-  badge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 0 },
-  badgeDefault: { backgroundColor: '#f1f5f9' },
-  badgePurple: { backgroundColor: '#f3e8ff' },
-  badgeOrange: { backgroundColor: '#ffedd5' },
-  badgeEmerald: { backgroundColor: '#d1fae5' },
-  badgeIndigo: { backgroundColor: '#e0e7ff' },
-  badgeText: { fontSize: 11, fontWeight: 'bold' },
-  badgeTextDefault: { color: '#64748b' },
-
-  cardBody: { padding: 16, gap: 10 },
+  orderId: { fontSize: 15, fontWeight: 'bold', color: '#1e293b' },
+  assignedTo: { fontSize: 13, color: '#64748b', marginTop: 2, fontWeight: '600' },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  badgeText: { fontSize: 10, fontWeight: 'bold' },
+  cardBody: { gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  infoText: { fontSize: 14, color: '#475569', flex: 1, lineHeight: 20 },
+  infoText: { fontSize: 14, color: '#475569', fontWeight: '500', flex: 1 },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 5,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9'
   },
-  itemCount: { fontSize: 13, color: '#94a3b8', fontWeight: '500' },
-  totalPrice: { fontSize: 18, fontWeight: 'bold', color: '#059669' },
-
-  cardFooter: {
-    padding: 12,
-    backgroundColor: '#f8fafc',
-    flexDirection: 'row',
-    gap: 10
-  },
-  btnPrimary: {
-    flex: 2,
-    backgroundColor: '#10b981',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2
-  },
-  btnDisabled: {
-    backgroundColor: '#94a3b8',
-    elevation: 0
-  },
-  btnIgnore: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
-  },
-  btnOrange: {
-    flex: 1,
-    backgroundColor: '#f97316',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  btnSuccess: {
-    flex: 1,
-    backgroundColor: '#10b981',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  btnTextPrimary: { color: 'white', fontWeight: 'bold', fontSize: 14 },
-  btnTextIgnore: { color: '#64748b', fontWeight: 'bold', fontSize: 14 },
-  btnTextWhite: { color: 'white', fontWeight: 'bold', fontSize: 14 },
-
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 15 },
-  loadingText: { color: '#64748b', fontSize: 14, fontWeight: '500' },
-
-  emptyContent: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 80, paddingHorizontal: 40 },
-  emptyLabelText: { fontSize: 18, fontWeight: 'bold', color: '#475569', marginTop: 15 },
-  emptySubLabelText: { fontSize: 14, color: '#94a3b8', textAlign: 'center', marginTop: 8, lineHeight: 20 },
-
-  // New Tab & Group Styles
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 15,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  tabBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-  },
-  tabBtnActive: {
-    backgroundColor: '#ecfdf5',
-  },
-  tabBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#64748b',
-  },
-  tabBtnTextActive: {
-    color: '#10b981',
-  },
-  tabBadge: {
-    backgroundColor: '#10b981',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  tabBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  groupCard: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
-    elevation: 4,
-    shadowColor: '#64748b',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    overflow: 'hidden',
-  },
-  groupCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
-  },
-  groupSubText: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  groupCardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f8fafc',
-    gap: 12,
-  },
   priceTag: {
-    backgroundColor: 'white',
+    backgroundColor: '#ecfdf5',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
+    borderColor: '#d1fae5'
+  },
+  priceTagText: { fontSize: 16, fontWeight: 'bold', color: '#059669' },
+  itemCount: { fontSize: 13, color: '#94a3b8', fontWeight: '700' },
+  cardFooter: { marginTop: 15 },
+  dualActions: { flexDirection: 'row', gap: 10 },
+  btnIgnore: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
     borderColor: '#e2e8f0',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  priceTagText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#059669',
-  },
-  btnGroupAccept: {
+  btnTextIgnore: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  btnPrimary: {
     flex: 1,
     backgroundColor: '#10b981',
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    justifyContent: 'center',
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8
   },
-  btnGroupView: {
-    flex: 1,
-    backgroundColor: 'white',
-    paddingVertical: 10,
-    borderRadius: 12,
+  btnTextPrimary: { fontSize: 14, fontWeight: '700', color: 'white' },
+  btnDisabled: { backgroundColor: '#cbd5e1', shadowOpacity: 0 },
+  primaryActionButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 14,
+    borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8
+  },
+  primaryActionButtonText: { color: 'white', fontSize: 15, fontWeight: 'bold' },
+  btnOrange: { backgroundColor: '#f97316', paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  btnSuccess: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 14, alignItems: 'center' },
+  btnTextWhite: { color: 'white', fontWeight: 'bold' },
+  iconContainer: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  totalPrice: { fontSize: 16, fontWeight: 'bold', color: '#059669' },
+  // Badges
+  badgeDefault: { backgroundColor: '#f1f5f9' },
+  badgeTextDefault: { color: '#64748b' },
+  badgePurple: { backgroundColor: '#f3e8ff' },
+  badgeOrange: { backgroundColor: '#ffedd5' },
+  badgeEmerald: { backgroundColor: '#d1fae5' },
+  badgeIndigo: { backgroundColor: '#e0e7ff' },
+  // Date filter mini bubble
+  miniBadgeBubble: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: 'white'
+  },
+  miniBadgeText: { color: 'white', fontSize: 9, fontWeight: 'bold' },
+  // Banner
+  blockedBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#fef2f2',
+    margin: 20,
+    marginTop: 0,
+    padding: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#10b981',
-  }
+    borderColor: '#fee2e2',
+    alignItems: 'center',
+    gap: 12
+  },
+  blockedBannerIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center' },
+  blockedBannerText: { fontSize: 15, fontWeight: 'bold', color: '#991b1b' },
+  blockedBannerSub: { fontSize: 13, color: '#ef4444', marginTop: 1 },
+  // Loading & Empty
+  loadingContainer: { flex: 1, padding: 40, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { marginTop: 12, color: '#64748b', fontWeight: '600' },
+  emptyContent: { padding: 40, alignItems: 'center', justifyContent: 'center' },
+  emptyLabelText: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginTop: 16 },
+  emptySubLabelText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8 },
+  viewDetailBtn: { backgroundColor: '#10b981', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  viewDetailText: { color: 'white', fontWeight: 'bold', fontSize: 13 }
 });
